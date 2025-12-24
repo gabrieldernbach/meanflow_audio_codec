@@ -16,10 +16,10 @@ import json
 import time
 from collections import defaultdict
 
-from meanflow_audio_codec.references.mean_flow_mnist import (
+from meanflow_audio_codec.references.mean_flow import (
     Config, ConditionalFlow, init_training
 )
-from meanflow_audio_codec.references.improved_mean_flow_mnist import (
+from meanflow_audio_codec.references.improved_mean_flow import (
     Config as ImprovedConfig,
     ConditionalFlow as ImprovedConditionalFlow,
     init_training as init_training_improved
@@ -359,8 +359,8 @@ def run_benchmark():
     print(f"  Improvement: {improvement_quality:+.2f}%")
     
     # Save results
-    output_path = Path("benchmarks") / "meanflow_comparison_results.json"
-    output_path.parent.mkdir(exist_ok=True)
+    output_path = Path("outputs") / "meanflow_comparison_results.json"
+    output_path.parent.mkdir(exist_ok=True, parents=True)
     
     # Convert to JSON-serializable format
     results_serializable = {}
@@ -383,6 +383,12 @@ def run_benchmark():
     return results
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for MeanFlow vs Improved MeanFlow benchmark."""
     results = run_benchmark()
+    return results
+
+
+if __name__ == '__main__':
+    main()
 

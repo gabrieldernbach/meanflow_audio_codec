@@ -176,8 +176,8 @@ All optimizations should:
 
 To validate optimizations, run:
 ```bash
-uv run benchmarks/benchmark_audio_simple_test.py
-uv run benchmark_audio_vs_torch.py
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_audio_simple_test
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_audio_vs_torch
 ```
 
 Monitor:

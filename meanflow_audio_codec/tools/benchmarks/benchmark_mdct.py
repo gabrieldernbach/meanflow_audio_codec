@@ -210,9 +210,14 @@ def run_benchmarks():
                 print(f"  JAX CPU FFT:      {speedup:.2f}x")
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for MDCT benchmark."""
     print(f"JAX backend: {jax.default_backend()}")
     print(f"Available devices: {jax.devices()}")
     print()
     run_benchmarks()
+
+
+if __name__ == "__main__":
+    main()
 

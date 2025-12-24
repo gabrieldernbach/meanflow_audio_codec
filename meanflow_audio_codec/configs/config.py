@@ -36,6 +36,16 @@ class TrainFlowConfig:
     # Ablation flags
     use_stop_gradient: bool | None = None  # Default True
     loss_weighting: str | None = None  # "uniform", "time_dependent", "learned"
+    # Composability options
+    loss_strategy: str | None = None  # "flow_matching", "mean_flow", "improved_mean_flow" (default: inferred from use_improved_mean_flow)
+    noise_schedule: str | None = None  # "linear", "uniform" (default: "linear")
+    noise_min: float | None = None  # Default: 0.001
+    noise_max: float | None = None  # Default: 0.999
+    time_sampling: str | None = None  # "uniform", "logit_normal", "mean_flow" (default: "logit_normal")
+    time_sampling_mean: float | None = None  # Default: -0.4
+    time_sampling_std: float | None = None  # Default: 1.0
+    time_sampling_data_proportion: float | None = None  # Default: 0.5 (for mean_flow)
+    use_weighted_loss: bool | None = None  # Default: True
     # Deprecated fields for backward compatibility
     output_dir: Path | None = None
     run_name: str | None = None

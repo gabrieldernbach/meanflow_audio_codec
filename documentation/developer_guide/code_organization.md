@@ -299,3 +299,303 @@ The `meanflow_audio_codec` repository follows many BigVision patterns and has go
 
 The codebase is well-structured and maintainable. These changes would bring it closer to BigVision conventions while maintaining its current strengths (type-safe configs, clear organization, good separation of concerns).
 
+## Entry Point Patterns
+
+### Standard Entry Point Pattern
+
+All executable scripts should follow a consistent entry point pattern:
+
+```python
+def main():
+    """Main entry point for [script purpose]."""
+    # Script logic here
+    pass
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### Key Principles
+
+1. **Always define `main()` function**: All executable scripts should have a `main()` function that contains the script logic
+2. **Use `if __name__ == "__main__"` guard**: Always use the standard guard to call `main()`
+3. **Document the purpose**: Include a docstring explaining what the script does
+4. **Module-based execution**: Scripts in `tools/` should be executable as modules:
+   ```bash
+   python -m meanflow_audio_codec.tools.benchmarks.benchmark_mdct
+   uv run python -m meanflow_audio_codec.tools.download_wavegen --output-dir ~/datasets
+   ```
+
+### Examples
+
+**Good:**
+```python
+def main():
+    """Main entry point for MDCT benchmark."""
+    print("Running benchmark...")
+    run_benchmarks()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+**Bad:**
+```python
+# ❌ Code directly in if __name__ block
+if __name__ == "__main__":
+    print("Running benchmark...")
+    run_benchmarks()
+```
+
+## Script Organization Guidelines
+
+### Directory Structure
+
+Scripts are organized into three main categories:
+
+1. **Utility Scripts** (`meanflow_audio_codec/tools/`):
+   - Dataset preparation tools (`download_wavegen.py`)
+   - Benchmark scripts (`tools/benchmarks/benchmark_*.py`)
+   - Evaluation utilities (`evaluate_all.py`, `aggregate_results.py`)
+   - Configuration generation (`generate_configs.py`)
+   - All general-purpose utility scripts
+
+2. **Project-Specific Scripts** (`meanflow_audio_codec/proj/`):
+   - Experimental training scripts
+   - Project-specific configurations
+   - Trial implementations
+   - Examples: `audio_autoencoder/train.py`, `mnist_trial/train.py`
+
+3. **Main Entry Points** (root level):
+   - Primary training script (`train.py`)
+   - Should be minimal and delegate to package code
+
+### When to Use Each Location
+
+- **Use `tools/`** for:
+  - Reusable utilities that work across projects
+  - Benchmark scripts
+  - Data preparation scripts
+  - General-purpose evaluation tools
+
+- **Use `proj/`** for:
+  - Experimental code
+  - Project-specific training scripts
+  - Trial implementations
+  - Code that may not be maintained long-term
+
+- **Use root level** for:
+  - Primary entry points (e.g., `train.py`)
+  - Only the most important, stable scripts
+
+### Benchmarks Organization
+
+All benchmark scripts are located in `meanflow_audio_codec/tools/benchmarks/`:
+
+- `benchmark_mdct.py` - MDCT implementation benchmarks
+- `benchmark_audio_loader.py` - Audio dataloader benchmarks
+- `benchmark_meanflow_vs_improved.py` - Method comparison benchmarks
+- And other performance testing scripts
+
+Benchmarks can be run as modules:
+```bash
+python -m meanflow_audio_codec.tools.benchmarks.benchmark_mdct
+```
+
+## Naming Conventions
+
+### File and Module Names
+
+- **Script files**: `snake_case.py` (e.g., `train.py`, `benchmark_mdct.py`)
+- **Module files**: `snake_case.py` (e.g., `audio.py`, `mdct.py`)
+- **Package directories**: `snake_case/` (e.g., `datasets/`, `preprocessing/`)
+
+### Class Names
+
+- **Classes**: `PascalCase` (e.g., `ConditionalFlow`, `TrainState`, `MDCTConfig`)
+
+### Function Names
+
+- **Functions**: `snake_case` (e.g., `train_flow`, `build_audio_pipeline`, `mdct`)
+
+### Constants
+
+- **Constants**: `UPPER_SNAKE_CASE` (e.g., `DEFAULT_BATCH_SIZE`, `MAX_ITERATIONS`)
+
+### Private Members
+
+- **Private functions/classes**: Prefix with single underscore `_` (e.g., `_load_audio`, `_mdct_direct`)
+- **Module-private**: Use `__all__` to control public API
+
+### Examples
+
+```python
+# ✅ Good naming
+class ConditionalFlow:
+    def train_step(self, batch):
+        pass
+
+DEFAULT_BATCH_SIZE = 32
+
+def build_audio_pipeline(data_dir: str):
+    pass
+
+def _internal_helper():
+    pass
+
+# ❌ Bad naming
+class conditional_flow:  # Should be PascalCase
+    def TrainStep(self, batch):  # Should be snake_case
+        pass
+
+defaultBatchSize = 32  # Should be UPPER_SNAKE_CASE
+```
+
+## Module Export Guidelines
+
+### Public API Definition
+
+Each module should clearly define its public API using `__all__`:
+
+```python
+from meanflow_audio_codec.models.mlp_flow import ConditionalFlow, MLP
+
+__all__ = [
+    "ConditionalFlow",
+    "MLP",
+]
+```
+
+### Export Principles
+
+1. **Explicit exports**: Always use `__all__` to define public API
+2. **Import organization**: Group imports (stdlib, third-party, local)
+3. **Version info**: Main package `__init__.py` should export `__version__`
+4. **Documentation**: Include module-level docstrings explaining purpose
+
+### Module Structure
+
+```python
+"""Module-level docstring explaining purpose and usage."""
+
+# Standard library imports
+from pathlib import Path
+
+# Third-party imports
+import numpy as np
+
+# Local imports
+from meanflow_audio_codec.models import ConditionalFlow
+
+# Public API
+__all__ = [
+    "ConditionalFlow",
+]
+
+# Implementation...
+```
+
+### Testing Utilities
+
+Testing utilities (functions prefixed with `_` or marked for testing) should be:
+- Clearly documented as testing utilities
+- Included in `__all__` only if needed for external testing
+- Examples: `_mdct_direct`, `mdct_fft` (marked with comments in `__all__`)
+
+## Separation of Library vs Application Code
+
+### Library Code
+
+**Location**: `meanflow_audio_codec/` package modules
+
+**Characteristics**:
+- Reusable, well-tested components
+- Stable APIs with `__all__` exports
+- Comprehensive documentation
+- Examples: `models/`, `datasets/`, `preprocessing/`, `trainers/`
+
+### Application Code
+
+**Location**: `tools/`, `proj/`, root-level scripts
+
+**Characteristics**:
+- Scripts that use library code
+- May be experimental or project-specific
+- Can have more flexible APIs
+- Examples: `tools/download_wavegen.py`, `proj/audio_autoencoder/train.py`
+
+### Reference Implementations
+
+**Location**: `meanflow_audio_codec/references/`
+
+**Purpose**:
+- PyTorch reference implementations for debugging
+- Trusted baselines for comparison
+- Not part of the main library API
+- Clearly marked as reference/debug code
+
+### Guidelines
+
+1. **Library code should not depend on application code**
+2. **Application code imports and uses library code**
+3. **Reference implementations are separate and clearly marked**
+4. **Tools are separate modules, not part of core library**
+
+## Repository Organization Patterns (Stability AI Inspired)
+
+### Key Principles
+
+1. **Clear module boundaries**: Each module has a single, well-defined purpose
+2. **Consistent entry points**: All scripts follow the same `main()` pattern
+3. **Organized utilities**: Tools and benchmarks are clearly categorized
+4. **Separation of concerns**: Library code, application code, and references are distinct
+
+### Directory Organization
+
+```
+meanflow_audio_codec/
+├── meanflow_audio_codec/          # Main library package
+│   ├── models/                    # Model definitions (library)
+│   ├── trainers/                  # Training logic (library)
+│   ├── datasets/                  # Data loading (library)
+│   ├── preprocessing/             # Preprocessing (library)
+│   ├── evaluators/                # Evaluation (library)
+│   ├── configs/                   # Configuration (library)
+│   ├── tools/                     # Utility scripts (application)
+│   │   ├── benchmarks/            # Benchmark scripts
+│   │   └── ...                    # Other utilities
+│   ├── proj/                      # Project-specific code (application)
+│   └── references/                # Reference implementations (debug)
+├── test/                          # Test suite
+├── documentation/                 # Documentation
+├── configs/                       # Example configs
+└── train.py                       # Main entry point
+```
+
+### Adding New Components
+
+**Adding a new tool:**
+1. Create script in `meanflow_audio_codec/tools/`
+2. Follow entry point pattern with `main()` function
+3. Add to `tools/__init__.py` if needed for imports
+4. Document usage in module docstring
+
+**Adding a new benchmark:**
+1. Create script in `meanflow_audio_codec/tools/benchmarks/`
+2. Name it `benchmark_*.py`
+3. Follow entry point pattern
+4. Document what it benchmarks
+
+**Adding a new project:**
+1. Create subdirectory in `meanflow_audio_codec/proj/`
+2. Add project-specific scripts
+3. Document project purpose in README or docstrings
+
+**Adding library code:**
+1. Add to appropriate module (`models/`, `datasets/`, etc.)
+2. Export via `__init__.py` with `__all__`
+3. Add comprehensive documentation
+4. Write tests in `test/`
+

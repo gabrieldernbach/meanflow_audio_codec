@@ -1,6 +1,13 @@
 # Benchmarks
 
-This directory contains benchmark scripts for various components of the meanflow_audio_codec project.
+This document describes the benchmark scripts available in `meanflow_audio_codec/tools/benchmarks/`.
+
+All benchmarks can be run as Python modules:
+```bash
+python -m meanflow_audio_codec.tools.benchmarks.benchmark_name
+# Or with uv:
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_name
+```
 
 ## Current Benchmarks
 
@@ -19,12 +26,30 @@ The following outdated benchmarks have been removed:
 - **`benchmark_audio_dataloaders.py`** - Referenced non-existent functions `load_audio_train` and `load_audio_train_grain`. The current API uses `build_audio_pipeline` instead.
 - **`benchmark_audio_quick.py`** - Referenced non-existent functions `load_audio_train` and `load_audio_train_grain`.
 
-### Torch Comparison (Potentially Outdated)
-The following benchmarks are still in `test/` directory but may be outdated. They require external `flowmo` repository at `~/git/flowmo`:
-- **`test/benchmark_audio_vs_torch.py`** - Compares JAX implementation with PyTorch flowmo implementation.
-- **`test/benchmark_torch_only.py`** - Standalone torch benchmark.
+### Torch Comparison
+The following benchmarks compare JAX implementation with PyTorch flowmo implementation. They require external `flowmo` repository at `~/git/flowmo`:
+- **`benchmark_audio_vs_torch.py`** - Compares JAX implementation with PyTorch flowmo implementation
+- **`benchmark_torch_only.py`** - Standalone torch benchmark
 
-These torch benchmarks may still be useful if you have the flowmo repository, but are not actively maintained.
+These benchmarks can be run as:
+```bash
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_audio_vs_torch
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_torch_only
+```
+
+### Method Comparison
+- **`benchmark_meanflow_vs_improved.py`** - Compares original MeanFlow vs Improved MeanFlow on MNIST
+
+```bash
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_meanflow_vs_improved
+```
+
+### Audio Loader Benchmarks
+- **`benchmark_audio_loader.py`** - Benchmark audio dataloader implementations and identify bottlenecks
+
+```bash
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_audio_loader
+```
 
 ## Usage
 
@@ -32,15 +57,15 @@ Most benchmarks can be run directly with `uv run`:
 
 ```bash
 # MDCT benchmarks
-uv run benchmarks/benchmark_mdct.py
-uv run benchmarks/benchmark_mdct_simple.py
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_mdct
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_mdct_simple
 
 # Audio benchmarks
-uv run benchmarks/benchmark_audio_simple_test.py
-uv run benchmarks/benchmark_prefetch.py
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_audio_simple_test
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_prefetch
 
 # MP3 loader comparison (requires data directory)
-uv run benchmarks/benchmark_mp3_loaders.py --data-dir /path/to/mp3/files
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_mp3_loaders --data-dir /path/to/mp3/files
 ```
 
 ## Notes

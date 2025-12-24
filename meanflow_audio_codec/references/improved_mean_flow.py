@@ -236,7 +236,8 @@ def train(model, train_iterator, val_iterator, opt, cfg):
     return final_lbl
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for Improved MeanFlow reference implementation."""
     cfg = Config()
     
     train_iterator, val_iterator, model, opt = init_training(cfg)
@@ -248,4 +249,8 @@ if __name__ == '__main__':
         ax.imshow(xhat.view(28,28).cpu(), vmin=-1, vmax=1, cmap='gray')
         ax.set_title(idx.item()); ax.axis('off')
     plt.tight_layout(); plt.show()
+
+
+if __name__ == '__main__':
+    main()
 

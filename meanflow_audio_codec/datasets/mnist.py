@@ -49,8 +49,6 @@ def load_mnist(
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     if split not in ("train", "test"):
         raise ValueError(f"Invalid split: {split}. Must be 'train' or 'test'")
-    if format not in ("1d", "2d"):
-        raise ValueError(f"Invalid format: {format}. Must be '1d' or '2d'")
 
     ds = tfds.load(
         "mnist",
