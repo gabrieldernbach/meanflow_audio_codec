@@ -1,8 +1,10 @@
 # Meanflow Audio Codec
 
-A JAX/Flax implementation of **MDCT-based autoencoder audio codec** using Improved Mean Flows. This project systematically studies baseline performances across different architectures, methods, and tokenization strategies to develop an effective audio codec.
+Most state-of-the-art neural audio codecs start from a rate–distortion autoencoder, then add GAN discriminators to recover perceptual detail at low bitrate. This works, but it trades reconstruction stability for adversarial tuning and failure modes (training instability, sensitivity to discriminator design, and brittle loss balancing).
 
-This repository implements the Improved Mean Flow (iMF) method from ["Improved Mean Flows: On the Challenges of Fastforward Generative Models"](https://arxiv.org/abs/2512.02012) by Geng, Lu, Wu, Shechtman, Kolter, and He, with the goal of applying it to audio encoding.
+This repository explores a non-adversarial alternative: treat the decoder as a conditional sampler trained by flow matching, so "perceptual sharpness" comes from learning a distribution $p(x|y)$ rather than forcing a deterministic point estimate $\hat{x}(y)$. Improved Mean Flows (iMF) makes this practical for codec-style deployment by targeting high-quality synthesis with very low NFE, effectively acting as a stochastic post-filter/transport conditioned on the compressed representation. Distilling to a few function evaluations is therefore not "full circle back to an autoencoder": even in the low-NFE limit, the model is trained to reproduce the teacher sampler's distributional behavior across noise levels, and it retains an explicit noise-to-audio transport pathway that a standard AE objective does not enforce.
+
+Concretely, this repo implements an MDCT-domain codec in JAX/Flax and benchmarks the progression (A) pure autoencoder → (B) flow matching → (C) mean flow → (D) improved mean flow, to quantify when iMF can replace adversarial perceptual regularization with a stable regression-style training signal.
 
 ## Research Plan
 

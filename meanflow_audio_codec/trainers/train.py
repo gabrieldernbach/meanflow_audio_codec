@@ -113,8 +113,15 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
         config.checkpoint_step if config.checkpoint_step is not None else config.n_steps
     )
     saved_checkpoint = False
+    
+    # Initialize profiling
+    from meanflow_audio_codec.trainers.profiling import ProfilingTrainer
+    profiler = ProfilingTrainer(logger)
+    profiler.start_training(state.params)
 
     for step in range(start_step, config.n_steps):
+        profiler.before_step(step)
+        
         img, tar = next(it)
 
         x = preprocess_images(img, format="1d", normalize=True)
@@ -128,8 +135,8 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
         loss_val = float(loss)
         loss_avg = ema(loss_avg, loss_val)
 
-        # Log to JSON
-        logger.write_step(
+        # Log to JSON with profiling
+        profiler.after_step(
             step,
             {
                 "loss": loss_val,
@@ -205,6 +212,13 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
 
     if not saved_checkpoint:
         save_checkpoint(checkpoints_dir / f"step_{config.n_steps:05d}.msgpack", state)
+    
+    # End profiling and log summary
+    training_summary = profiler.end_training(config.n_steps)
+    print(f"\nTraining Summary:")
+    print(f"  Total time: {training_summary['total_training_time_hours']:.2f} hours")
+    print(f"  Steps/sec: {training_summary['steps_per_second']:.2f}")
+    print(f"  Avg step time: {training_summary['avg_step_time']*1000:.2f} ms")
 
     logger.close()
 

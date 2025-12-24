@@ -841,6 +841,7 @@ name = "meanflow-audio-codec"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "einops" },
     { name = "flax" },
     { name = "grain" },
     { name = "jax" },
@@ -852,6 +853,7 @@ dependencies = [
     { name = "numpy" },
     { name = "optax" },
     { name = "pytest" },
+    { name = "scipy" },
     { name = "tensorflow" },
     { name = "tensorflow-datasets" },
     { name = "toolz" },
@@ -865,6 +867,8 @@ all = [
 ]
 audio = [
     { name = "minimp3py" },
+    { name = "pesq" },
+    { name = "pystoi" },
 ]
 metal = [
     { name = "jax-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -872,6 +876,7 @@ metal = [
 
 [package.metadata]
 requires-dist = [
+    { name = "einops", specifier = ">=0.8" },
     { name = "flax", specifier = ">=0.8" },
     { name = "grain", specifier = ">=0.2" },
     { name = "jax", specifier = "==0.4.38" },
@@ -886,7 +891,10 @@ requires-dist = [
     { name = "minimp3py", marker = "extra == 'audio'", git = "https://github.com/f0k/minimp3py.git" },
     { name = "numpy", specifier = ">=1.26,<2.0" },
     { name = "optax", specifier = ">=0.2" },
+    { name = "pesq", marker = "extra == 'audio'", specifier = ">=0.0.4" },
+    { name = "pystoi", marker = "extra == 'audio'", specifier = ">=0.3.3" },
     { name = "pytest", specifier = ">=8.0" },
+    { name = "scipy", specifier = ">=1.11" },
     { name = "tensorflow", specifier = ">=2.17" },
     { name = "tensorflow-datasets", specifier = ">=4.9" },
     { name = "toolz", specifier = ">=0.12" },
@@ -1104,6 +1112,12 @@ wheels = [
 ]
 
 [[package]]
+name = "pesq"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/e6/f8bdcef3238ac10fb3ce37d150e9b03a152d971febd681f088c6e5e17d8e/pesq-0.0.4.tar.gz", hash = "sha256:b724b28f73fb638522982bd68e8c3c0957e2f45210639a460233b17aa7fc890b", size = 38702, upload-time = "2022-05-17T14:15:26.301Z" }
+
+[[package]]
 name = "pillow"
 version = "12.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1257,6 +1271,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f2/a5/181488fc2b9d093e3972d2a472855aae8a03f000592dbfce716a512b3359/pyparsing-3.2.5.tar.gz", hash = "sha256:2df8d5b7b2802ef88e8d016a2eb9c7aeaa923529cd251ed0fe4608275d4105b6", size = 1099274, upload-time = "2025-09-21T04:11:06.277Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/5e/1aa9a93198c6b64513c9d7752de7422c06402de6600a8767da1524f9570b/pyparsing-3.2.5-py3-none-any.whl", hash = "sha256:e38a4f02064cf41fe6593d328d0512495ad1f3d8a91c4f73fc401b3079a59a5e", size = 113890, upload-time = "2025-09-21T04:11:04.117Z" },
+]
+
+[[package]]
+name = "pystoi"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bf/3d/1ae8bdb686c6aaaeef474aa6b790abbe38f42b61188b57a974dd9320e521/pystoi-0.4.1.tar.gz", hash = "sha256:1c6f50d6fbfee46b00c922458cdbd27228d9830ca81cea788fd600fc2f7de6e4", size = 10401, upload-time = "2023-12-29T16:48:05.726Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/22/60cd92bd3ec00948800984410f4cf5ded5bd8e9b715729f3642efe0edb3d/pystoi-0.4.1-py2.py3-none-any.whl", hash = "sha256:e277b671663d26d35a2416c9c8010a74084e6c3970354506398051a554896939", size = 8218, upload-time = "2023-12-29T16:48:03.748Z" },
 ]
 
 [[package]]

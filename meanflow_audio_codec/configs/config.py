@@ -22,6 +22,20 @@ class TrainFlowConfig:
     latent_dimension: int
     num_blocks: int
     workdir: Path | None = None
+    # Tokenization
+    tokenization_strategy: str | None = None  # "mdct" or "reshape"
+    tokenization_config: dict | None = None  # Strategy-specific parameters
+    # Method, architecture, dataset selection
+    method: str | None = None  # "autoencoder", "flow_matching", "mean_flow", "improved_mean_flow"
+    architecture: str | None = None  # "mlp", "mlp_mixer", "convnet"
+    dataset: str | None = None  # "mnist", "audio"
+    # Improved Mean Flow hyperparameters
+    gamma: float | None = None  # Default 1.0
+    flow_ratio: float | None = None  # Default 1.0
+    c: float | None = None  # Default 1.0
+    # Ablation flags
+    use_stop_gradient: bool | None = None  # Default True
+    loss_weighting: str | None = None  # "uniform", "time_dependent", "learned"
     # Deprecated fields for backward compatibility
     output_dir: Path | None = None
     run_name: str | None = None

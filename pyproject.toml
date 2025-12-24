@@ -24,6 +24,7 @@ dependencies = [
     "loadax>=0.2.1",
     "toolz>=0.12",
     "scipy>=1.11",
+    "einops>=0.8",
     "jax-metal==0.1.1 ; platform_machine == 'arm64' and platform_system == 'Darwin'",
 ]
 
