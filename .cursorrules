@@ -1,0 +1,153 @@
+# Agent Instructions
+
+- Always use `uv run` instead of invoking `python` directly for running scripts.
+
+- ALWAYS check the implied hardware requirements and resources of any config you create before committing any compute. This includes:
+  - Memory requirements (RAM, GPU memory)
+  - CPU/GPU compute requirements
+  - Batch sizes and their impact on memory
+  - Dataset sizes and loading requirements
+  - Training duration estimates
+  - Any other resource-intensive operations
+  
+  Before executing any configuration that involves compute resources, verify that:
+  1. The hardware requirements are reasonable and available
+  2. The resource usage won't exceed available capacity
+  3. The user is aware of the computational cost
+  4. Alternative configurations with lower resource requirements are considered when appropriate
+
+## Development Hardware Limits (M1 MacBook, 16GB RAM)
+
+When creating configurations for development execution, ensure they are appropriate for M1 MacBook with 16GB RAM:
+
+- **Memory Limits:**
+  - Total available RAM: 16GB
+  - Reserve at least 4-6GB for system and other applications
+  - Maximum usable RAM for training/inference: ~10-12GB
+  - M1 uses unified memory (RAM and GPU memory share the same pool)
+  
+- **Batch Size Guidelines:**
+  - Start with small batch sizes (e.g., 4, 8, 16, 32) for development
+  - Monitor memory usage and adjust accordingly
+  - Avoid batch sizes that would require >10GB of memory
+  
+- **Dataset Loading:**
+  - Prefer streaming/lazy loading for large datasets
+  - Limit dataset size for quick development iterations
+  - Use data caching judiciously to avoid memory pressure
+  
+- **Training Duration:**
+  - Keep training runs short for development (minutes to a few hours max)
+  - Use early stopping and checkpointing
+  - Consider using smaller model sizes or fewer epochs for development
+  
+- **Model Complexity:**
+  - Prefer smaller model configurations for development
+  - Use gradient checkpointing if needed to reduce memory
+  - Consider using mixed precision training if supported
+  
+- **Before Running:**
+  - Always estimate memory usage before execution
+  - Warn the user if a configuration might be resource-intensive
+  - Suggest lower-resource alternatives when appropriate
+
+## Error Handling and Defensive Coding
+
+- **NEVER use overly defensive coding that silently fills in default values:**
+  - Do NOT automatically provide default values when a configuration is missing or a value is not found
+  - Do NOT use chained fallbacks (e.g., parameter → environment variable → hardcoded default path)
+  - Do NOT silently fall back to environment variables and then to hardcoded defaults (e.g., `os.environ.get("VAR", None)` followed by `Path.home() / "datasets" / "name"`)
+  - Do NOT silently continue execution when something fails to yield a value
+  - Instead, raise explicit errors (ValueError, KeyError, AttributeError, etc.) to make failures visible
+  - Silent defaults create hidden bugs where code executes with unintended behavior instead of failing fast
+  - If a value is required, it must be explicitly provided or an error must be raised
+  - Only use defaults when they are explicitly documented and intentional design choices
+  
+- **Required parameters must be truly required:**
+  - If a parameter is required for the function to work correctly, it MUST NOT have a default value (including `None`)
+  - Do NOT make a parameter optional with `= None` and then check for `None` to fall back to environment variables
+  - Environment variable fallbacks are considered silent fallbacks and should be avoided
+  - If a parameter is required, make it a required parameter (no default). Errors will occur naturally when:
+    - The parameter is not provided (Python will raise TypeError)
+    - The parameter is invalid (e.g., invalid path will fail when used)
+  - **Example of anti-pattern to avoid:**
+    ```python
+    # BAD: Optional parameter with environment variable fallback
+    def load_data(data_dir: str | None = None):
+        if data_dir is None:
+            data_dir = os.environ.get("DATA_DIR")
+            if data_dir is None:
+                raise ValueError("data_dir must be provided or DATA_DIR must be set")
+    ```
+  - **Example of correct approach:**
+    ```python
+    # GOOD: Required parameter - no default, no fallback
+    def load_data(data_dir: str):
+        # If data_dir is None or invalid, error will occur naturally when used
+        files = list(Path(data_dir).iterdir())
+        if not files:
+            raise ValueError(f"No files found in {data_dir}")
+    ```
+  - **Key principle:** If a parameter is required for the function to work, make it a required parameter. Let Python's natural error handling work - if it's not provided, TypeError is raised. If it's invalid, the error will occur when it's used (e.g., invalid path fails on file operations, empty directory fails when iterating).
+
+- **NEVER accept parameters that are not actually used:**
+  - Do NOT add function parameters that are validated but never used in the implementation
+  - Do NOT create validation functions that check parameters but the validated values are then ignored
+  - If a parameter is accepted, it MUST be used in the function's logic
+  - If a parameter is optional and not provided, the function should use a sensible default, but if provided, it must be used
+  - Unused parameters create confusion and technical debt - they suggest functionality that doesn't exist
+  - **Example of anti-pattern to avoid:**
+    ```python
+    # BAD: Parameter accepted but never used
+    def process_data(data, custom_window=None):
+        validate_window(custom_window, window_size)  # Validates but doesn't use
+        window = generate_default_window()  # Always uses default, ignores custom_window
+        return process(data, window)
+    ```
+  - **Example of correct approach:**
+    ```python
+    # GOOD: Parameter is actually used when provided
+    def process_data(data, custom_window=None):
+        if custom_window is not None:
+            validate_window(custom_window, window_size)
+            window = custom_window
+        else:
+            window = generate_default_window()
+        return process(data, window)
+    ```
+  - **Alternative correct approach (if parameter truly not needed):**
+    ```python
+    # GOOD: Remove unused parameter entirely
+    def process_data(data):
+        window = generate_default_window()  # Always use default
+        return process(data, window)
+    ```
+
+## File Organization and Temporary Files
+
+- **NEVER create test/debug/exploratory files at the top level of the repository:**
+  - Do NOT create files like `debug_*.py`, `test_*.py`, `sketch.py`, `scratch.py`, `verify_*.py`, `show_*.py`, or similar temporary/exploratory scripts at the repository root
+  - These files clutter the top-level directory and make it harder to navigate the codebase
+  - They also create confusion about what files are part of the actual project vs. temporary exploration
+  
+- **Use appropriate directories for different file types:**
+  - **Proper tests:** Place in `test/` directory (already exists) - these are permanent, version-controlled tests
+  - **Benchmarks:** Place in `benchmarks/` directory (already exists) - these are performance benchmarks
+  - **Temporary/debug/exploratory files:** Place in `scratch/` directory (create if needed, gitignored)
+    - Use `scratch/` for one-off debug scripts, exploratory code, temporary experiments, or breadcrumb files that helped steer implementation improvements
+    - Files in `scratch/` are meant to be temporary and can be cleaned up periodically
+    - This keeps a trace of development breadcrumbs without cluttering the main codebase
+  
+- **Creating the scratch directory:**
+  - If `scratch/` doesn't exist, create it when needed
+  - The `scratch/` directory should be gitignored (add `scratch/` to `.gitignore`)
+  - Files in `scratch/` are local-only and won't be committed to version control
+  
+- **Examples of appropriate file placement:**
+  - `test/test_model.py` ✓ (proper test)
+  - `benchmarks/benchmark_model.py` ✓ (performance benchmark)
+  - `scratch/debug_encoder_shape.py` ✓ (temporary debug script)
+  - `scratch/explore_loss_behavior.py` ✓ (exploratory script)
+  - `debug_encoder.py` ✗ (top-level - NOT allowed)
+  - `test_model_quick.py` ✗ (top-level - NOT allowed)
+

@@ -1,0 +1,18 @@
+{
+  "noise_dimension": 784,
+  "condition_dimension": 128,
+  "latent_dimension": 256,
+  "num_blocks": 6,
+  "batch_size": 128,
+  "n_steps": 2000,
+  "base_lr": 0.001,
+  "weight_decay": 0.0001,
+  "seed": 42,
+  "sample_every": 200,
+  "sample_seed": 42,
+  "sample_steps": 50,
+  "use_improved_mean_flow": false,
+  "data_dir": null,
+  "workdir": "./outputs/method=autoencoder--architecture=mlp_mixer--dataset=mnist",
+  "checkpoint_step": 200
+}
