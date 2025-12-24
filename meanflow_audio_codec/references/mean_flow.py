@@ -23,6 +23,8 @@ class Config:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-6
     flow_ratio: float = 0.5
+    gamma: float = 0.5
+    c: float = 1e-3
     sample_n_steps: int = 2
     ema_beta: float = 0.999
     ema_alpha: float = 0.001
@@ -77,16 +79,7 @@ class ConditionalFlow(nn.Module):
             x = blk(x, cond)
         return x
 
-    def improved_mean_flow_loss(self, x0, cls_idx, flow_ratio):
-        """
-        Improved MeanFlow loss (iMF) using v-loss formulation.
-        
-        Key differences from original MeanFlow:
-        1. Boundary condition: v_theta(z_t, t) = u_theta(z_t, t, t)
-        2. JVP uses v_theta instead of e - x
-        3. Compound prediction: V_theta = u_theta + (t-r) * sg(JVP)
-        4. Loss: ||V_theta - (e - x)||^2 (standard regression)
-        """
+    def mean_flow_loss(self, x0, cls_idx, flow_ratio, gamma, c):
         B, D = x0.shape
         # sample (t, r) with r ≤ t and overwrite flow_ratio fraction with r=t
         t = torch.rand(B, device=x0.device)
@@ -95,31 +88,24 @@ class ConditionalFlow(nn.Module):
         same_mask = torch.rand(B, device=x0.device) < flow_ratio
         r = torch.where(same_mask, t, r)
 
-        e = torch.randn_like(x0)                      # Gaussian end-point
-        z = (1-t)[:, None]*x0 + t[:, None]*e          # mixture point
-        
-        # Boundary condition: v_theta(z_t, t) = u_theta(z_t, t, t)
-        v_theta = self.forward(z, t.unsqueeze(1), t.unsqueeze(1), cls_idx)
-        
+        e  = torch.randn_like(x0)                      # Gaussian end-point
+        z  = (1-t)[:, None]*x0 + t[:, None]*e          # mixture point
+        v  = e - x0
+
         def f(z_, t_, r_): 
             return self.forward(z_, t_.unsqueeze(1), r_.unsqueeze(1), cls_idx)
             
-        # JVP w.r.t. (z, r, t) along tangent (v_theta, 0, 1)
-        # Note: tangent vector is (v_theta, 0, 1) instead of (e-x, 1, 0)
         u, dudt = torch.autograd.functional.jvp(
-            f, (z, t, r), (v_theta, torch.zeros_like(t), torch.ones_like(t)), create_graph=True)
-        
-        # Compound prediction: V_theta = u_theta + (t-r) * sg(dudt)
-        V_theta = u + (t-r)[:, None] * dudt.detach()
-        
-        # Target is ground truth conditional velocity
-        target = e - x0
-        
-        # Standard L2 loss (no weighting)
-        loss = (V_theta - target).pow(2).mean()
-        mse = (V_theta - target).pow(2).mean()
+            f, (z, t, r), (v, torch.ones_like(t), torch.zeros_like(r)), create_graph=True)
 
-        return loss, mse
+        u_tgt = v - torch.clip((t-r)[:, None], min=0.0, max=1.0) * dudt
+        err   = u - u_tgt.detach()
+
+        delta_sq = err.pow(2).mean(1)
+        w = 1 / (delta_sq + c).pow(1-gamma)
+        loss = (w.detach() * delta_sq).mean()
+
+        return loss, err.pow(2).mean()
 
     @torch.no_grad()
     def sample(self, cls_idx, n_steps=5):
@@ -181,8 +167,8 @@ def evaluate(model, val_iterator, cfg, n_steps):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_mean_flow_loss(
-            img, lbl, cfg.flow_ratio
+        loss, mse = model.mean_flow_loss(
+            img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
         )
         
         total_loss += loss.item()
@@ -207,8 +193,8 @@ def train(model, train_iterator, val_iterator, opt, cfg):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_mean_flow_loss(
-            img, lbl, cfg.flow_ratio
+        loss, mse = model.mean_flow_loss(
+            img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
         )
 
         loss.backward()
@@ -236,7 +222,8 @@ def train(model, train_iterator, val_iterator, opt, cfg):
     return final_lbl
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for MeanFlow reference implementation."""
     cfg = Config()
     
     train_iterator, val_iterator, model, opt = init_training(cfg)
@@ -249,5 +236,8 @@ if __name__ == '__main__':
         ax.set_title(idx.item()); ax.axis('off')
     plt.tight_layout(); plt.show()
 
+
+if __name__ == '__main__':
+    main()
 
 

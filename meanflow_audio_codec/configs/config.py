@@ -266,6 +266,7 @@ class TrainingConfig:
     sample_steps: int
     workdir: Path | None = None
     checkpoint_step: int | None = None
+    max_checkpoints_to_keep: int | None = None
     
     def validate(self) -> None:
         """Validate training configuration parameters."""
@@ -275,6 +276,10 @@ class TrainingConfig:
             raise ValueError(f"sample_steps must be > 0, got {self.sample_steps}")
         if self.checkpoint_step is not None and self.checkpoint_step <= 0:
             raise ValueError(f"checkpoint_step must be > 0, got {self.checkpoint_step}")
+        if self.max_checkpoints_to_keep is not None and self.max_checkpoints_to_keep <= 0:
+            raise ValueError(
+                f"max_checkpoints_to_keep must be > 0, got {self.max_checkpoints_to_keep}"
+            )
     
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -366,11 +371,11 @@ class TrainFlowConfig:
         config_version: str = "2.0",
     ):
         """Initialize TrainFlowConfig."""
-        object.__setattr__(self, "base", base)
-        object.__setattr__(self, "model", model)
-        object.__setattr__(self, "dataset", dataset)
-        object.__setattr__(self, "method", method)
-        object.__setattr__(self, "training", training)
+        object.__setattr__(self, "_base", base)
+        object.__setattr__(self, "_model", model)
+        object.__setattr__(self, "_dataset", dataset)
+        object.__setattr__(self, "_method", method)
+        object.__setattr__(self, "_training", training)
         object.__setattr__(self, "output_dir", output_dir)
         object.__setattr__(self, "run_name", run_name)
         object.__setattr__(self, "config_version", config_version)
@@ -379,6 +384,7 @@ class TrainFlowConfig:
     def __post_init__(self):
         """Handle backward compatibility and validation."""
         # Handle deprecated output_dir/run_name -> workdir migration
+        dataset_config = object.__getattribute__(self, "_dataset")
         if self.training.workdir is None:
             if self.output_dir is not None:
                 warnings.warn(
@@ -406,18 +412,22 @@ class TrainFlowConfig:
         """Validate complete configuration."""
         self.base.validate()
         self.model.validate()
-        self.dataset.validate()
-        self.method.validate()
+        dataset_config = object.__getattribute__(self, "_dataset")
+        dataset_config.validate()
+        method_config = object.__getattribute__(self, "_method")
+        method_config.validate()
         self.training.validate()
     
     def to_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization."""
+        dataset_config = object.__getattribute__(self, "_dataset")
+        method_config = object.__getattribute__(self, "_method")
         result = {
             "config_version": self.config_version,
             "base": self.base.to_dict(),
             "model": self.model.to_dict(),
-            "dataset": self.dataset.to_dict(),
-            "method": self.method.to_dict(),
+            "dataset": dataset_config.to_dict(),
+            "method": method_config.to_dict(),
             "training": self.training.to_dict(),
         }
         # Skip deprecated fields
@@ -429,7 +439,10 @@ class TrainFlowConfig:
         # Detect config version
         config_version = data.get("config_version", "1.0")
         
-        if config_version == "1.0":
+        # Check if it's flat format (v1.0) by looking for top-level fields
+        is_flat = "base" not in data and any(k in data for k in ["batch_size", "n_steps", "base_lr"])
+        
+        if is_flat or config_version == "1.0":
             # Migrate from flat v1.0 format
             data = migrate_config_v1_to_v2(data)
         
@@ -471,12 +484,14 @@ class TrainFlowConfig:
     
     def get_schema(self) -> dict:
         """Get complete schema for this config."""
+        dataset_config = object.__getattribute__(self, "_dataset")
+        method_config = object.__getattribute__(self, "_method")
         return {
             "config_version": self.config_version,
             "base": self.base.get_schema(),
             "model": self.model.get_schema(),
-            "dataset": self.dataset.get_schema(),
-            "method": self.method.get_schema(),
+            "dataset": dataset_config.get_schema(),
+            "method": method_config.get_schema(),
             "training": self.training.get_schema(),
         }
     
@@ -486,11 +501,13 @@ class TrainFlowConfig:
         lines.append(f"Config Version: {self.config_version}")
         lines.append("")
         
+        dataset_config = object.__getattribute__(self, "_dataset")
+        method_config = object.__getattribute__(self, "_method")
         for section_name, section_config in [
             ("Base", self.base),
             ("Model", self.model),
-            ("Dataset", self.dataset),
-            ("Method", self.method),
+            ("Dataset", dataset_config),
+            ("Method", method_config),
             ("Training", self.training),
         ]:
             lines.append(f"## {section_name}Config")
@@ -507,6 +524,22 @@ class TrainFlowConfig:
         return "\n".join(lines)
     
     # Backward compatibility: provide properties for flat access
+    @property
+    def base(self) -> BaseConfig:
+        return object.__getattribute__(self, "_base")
+    
+    @property
+    def model(self) -> ModelConfig:
+        return object.__getattribute__(self, "_model")
+    
+    @property
+    def method(self) -> MethodConfig:
+        return object.__getattribute__(self, "_method")
+    
+    @property
+    def training(self) -> TrainingConfig:
+        return object.__getattribute__(self, "_training")
+    
     @property
     def batch_size(self) -> int:
         return self.base.batch_size
@@ -551,84 +584,104 @@ class TrainFlowConfig:
     def dataset(self) -> str | None:
         """Dataset name (backward compatibility property)."""
         # Access underlying attribute to avoid recursion
-        dataset_config = object.__getattribute__(self, "dataset")
-        return dataset_config.dataset
+        dataset_config = object.__getattribute__(self, "_dataset")
+        return dataset_config.dataset if dataset_config else None
     
     @property
     def data_dir(self) -> str | None:
-        return self.dataset.data_dir
+        dataset_config = object.__getattribute__(self, "_dataset")
+        return dataset_config.data_dir
     
     @property
     def tokenization_strategy(self) -> str | None:
-        return self.dataset.tokenization_strategy
+        dataset_config = object.__getattribute__(self, "_dataset")
+        return dataset_config.tokenization_strategy
     
     @property
     def tokenization_config(self) -> dict | None:
-        return self.dataset.tokenization_config
+        dataset_config = object.__getattribute__(self, "_dataset")
+        return dataset_config.tokenization_config
     
     @property
     def method(self) -> str | None:
-        return self.method.method
+        """Method name (backward compatibility property)."""
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.method if method_config else None
     
     @property
     def use_improved_mean_flow(self) -> bool:
-        return self.method.use_improved_mean_flow
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.use_improved_mean_flow
     
     @property
     def gamma(self) -> float | None:
-        return self.method.gamma
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.gamma
     
     @property
     def flow_ratio(self) -> float | None:
-        return self.method.flow_ratio
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.flow_ratio
     
     @property
     def c(self) -> float | None:
-        return self.method.c
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.c
     
     @property
     def use_stop_gradient(self) -> bool | None:
-        return self.method.use_stop_gradient
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.use_stop_gradient
     
     @property
     def loss_weighting(self) -> str | None:
-        return self.method.loss_weighting
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.loss_weighting
     
     @property
     def loss_strategy(self) -> str | None:
-        return self.method.loss_strategy
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.loss_strategy
     
     @property
     def noise_schedule(self) -> str | None:
-        return self.method.noise_schedule
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.noise_schedule
     
     @property
     def noise_min(self) -> float | None:
-        return self.method.noise_min
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.noise_min
     
     @property
     def noise_max(self) -> float | None:
-        return self.method.noise_max
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.noise_max
     
     @property
     def time_sampling(self) -> str | None:
-        return self.method.time_sampling
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.time_sampling
     
     @property
     def time_sampling_mean(self) -> float | None:
-        return self.method.time_sampling_mean
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.time_sampling_mean
     
     @property
     def time_sampling_std(self) -> float | None:
-        return self.method.time_sampling_std
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.time_sampling_std
     
     @property
     def time_sampling_data_proportion(self) -> float | None:
-        return self.method.time_sampling_data_proportion
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.time_sampling_data_proportion
     
     @property
     def use_weighted_loss(self) -> bool | None:
-        return self.method.use_weighted_loss
+        method_config = object.__getattribute__(self, "_method")
+        return method_config.use_weighted_loss
     
     @property
     def workdir(self) -> Path | None:
@@ -805,84 +858,102 @@ def create_mnist_config(**overrides) -> TrainFlowConfig:
     """Create a default MNIST configuration.
     
     Args:
-        **overrides: Override any default values
+        **overrides: Override any default values (can be flat or hierarchical)
     
     Returns:
         TrainFlowConfig for MNIST
     """
-    defaults = {
-        "base": {
-            "batch_size": 128,
-            "n_steps": 10000,
-            "base_lr": 0.0001,
-            "weight_decay": 0.0001,
-            "seed": 42,
-        },
-        "model": {
-            "noise_dimension": 784,
-            "condition_dimension": 128,
-            "latent_dimension": 256,
-            "num_blocks": 8,
-        },
-        "dataset": {
-            "dataset": "mnist",
-            "tokenization_strategy": "reshape",
-        },
-        "method": {
-            "use_improved_mean_flow": False,
-        },
-        "training": {
-            "sample_every": 1000,
-            "sample_seed": 42,
-            "sample_steps": 50,
-        },
-    }
+    base = BaseConfig(
+        batch_size=128,
+        n_steps=10000,
+        base_lr=0.0001,
+        weight_decay=0.0001,
+        seed=42,
+    )
+    model = ModelConfig(
+        noise_dimension=784,
+        condition_dimension=128,
+        latent_dimension=256,
+        num_blocks=8,
+    )
+    dataset = DatasetConfig(
+        dataset="mnist",
+        tokenization_strategy="reshape",
+    )
+    method = MethodConfig(
+        use_improved_mean_flow=False,
+    )
+    training = TrainingConfig(
+        sample_every=1000,
+        sample_seed=42,
+        sample_steps=50,
+        workdir=Path("./outputs/audio_default"),
+    )
     
-    # Merge overrides
-    merged = merge_configs(TrainFlowConfig.from_dict(defaults), overrides)
-    return merged
+    config = TrainFlowConfig(
+        base=base,
+        model=model,
+        dataset=dataset,
+        method=method,
+        training=training,
+    )
+    
+    # Apply overrides if provided
+    if overrides:
+        config = merge_configs(config, overrides)
+    
+    return config
 
 
 def create_audio_config(**overrides) -> TrainFlowConfig:
     """Create a default audio configuration.
     
     Args:
-        **overrides: Override any default values
+        **overrides: Override any default values (can be flat or hierarchical)
     
     Returns:
         TrainFlowConfig for audio
     """
-    defaults = {
-        "base": {
-            "batch_size": 128,
-            "n_steps": 10000,
-            "base_lr": 0.0001,
-            "weight_decay": 0.0001,
-            "seed": 42,
-        },
-        "model": {
-            "noise_dimension": 256 * 256 * 3,  # frame_sz * n_channels
-            "condition_dimension": 128,
-            "latent_dimension": 256,
-            "num_blocks": 8,
-        },
-        "dataset": {
-            "dataset": "audio",
-            "tokenization_strategy": "mdct",
-        },
-        "method": {
-            "use_improved_mean_flow": False,
-        },
-        "training": {
-            "sample_every": 1000,
-            "sample_seed": 42,
-            "sample_steps": 50,
-        },
-    }
+    base = BaseConfig(
+        batch_size=128,
+        n_steps=10000,
+        base_lr=0.0001,
+        weight_decay=0.0001,
+        seed=42,
+    )
+    model = ModelConfig(
+        noise_dimension=256 * 256 * 3,  # frame_sz * n_channels
+        condition_dimension=128,
+        latent_dimension=256,
+        num_blocks=8,
+    )
+    dataset = DatasetConfig(
+        dataset="audio",
+        tokenization_strategy="mdct",
+    )
+    method = MethodConfig(
+        use_improved_mean_flow=False,
+    )
+    training = TrainingConfig(
+        sample_every=1000,
+        sample_seed=42,
+        sample_steps=50,
+        workdir=Path("./outputs/mnist_default"),
+    )
     
-    # Merge overrides
-    merged = merge_configs(TrainFlowConfig.from_dict(defaults), overrides)
-    return merged
+    config = TrainFlowConfig(
+        base=base,
+        model=model,
+        dataset=dataset,
+        method=method,
+        training=training,
+    )
+    
+    # Apply overrides if provided
+    if overrides:
+        config = merge_configs(config, overrides)
+    
+    return config
 
 
 # ============================================================================

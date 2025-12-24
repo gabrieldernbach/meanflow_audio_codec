@@ -20,16 +20,18 @@ class Config:
     steps: int = 8_000
     warmup: int = 100
     device: str = 'mps'
-    learning_rate: float = 1e-4
+    learning_rate: float = 1e-3
     weight_decay: float = 1e-6
-    flow_ratio: float = 0.5
-    sample_n_steps: int = 2
-    ema_beta: float = 0.999
-    ema_alpha: float = 0.001
+    sample_n_steps: int = 100
+    ema_beta: float = 0.99
+    ema_alpha: float = 0.01
     log_frequency: int = 50
     eval_frequency: int = 200
     eval_steps: int = 100
     figsize: tuple[int, int] = (6, 6)
+    # Flow matching specific
+    noise_min: float = 0.001
+    noise_max: float = 0.999
 
 def sinusoidal_embedding(x, dim):
     freqs = torch.logspace(0, torch.log10(torch.tensor(1_000.)), dim//2).to(x.device)
@@ -44,6 +46,7 @@ def mlp(ins, hidden, outs):
     return nn.Sequential(nn.Linear(ins, hidden), nn.SiLU(), nn.Linear(hidden, outs))
 
 class ConditionalResidualBlock(nn.Module):
+    '''see https://arxiv.org/pdf/2212.09748 for adaptive layer norm feature-wise modulation'''
     def __init__(self, cfg):
         super().__init__()
         self.cond = mlp(cfg.cond_dim, cfg.latent_dim, 3*cfg.noise_dim)
@@ -68,70 +71,29 @@ class ConditionalFlow(nn.Module):
             nn.Linear(cfg.latent_dim, cfg.cond_dim)
         )
 
-    def forward(self, x, t, r, cls_idx):
+    def forward(self, x, time, cls_idx):
         cls = self.cls_emb(cls_idx)
-        t_emb = sinusoidal_embedding(t.squeeze(1), cls.size(-1))
-        r_emb = sinusoidal_embedding(r.squeeze(1), cls.size(-1))
-        cond  = cls + t_emb + r_emb
+        t_emb = sinusoidal_embedding(time.squeeze(1), cls.size(-1))
         for blk in self.blocks:
-            x = blk(x, cond)
+            x = blk(x, cls + t_emb)
         return x
 
-    def improved_mean_flow_loss(self, x0, cls_idx, flow_ratio):
-        """
-        Improved MeanFlow loss (iMF) using v-loss formulation.
-        
-        Key differences from original MeanFlow:
-        1. Boundary condition: v_theta(z_t, t) = u_theta(z_t, t, t)
-        2. JVP uses v_theta instead of e - x
-        3. Compound prediction: V_theta = u_theta + (t-r) * sg(JVP)
-        4. Loss: ||V_theta - (e - x)||^2 (standard regression)
-        """
-        B, D = x0.shape
-        # sample (t, r) with r ≤ t and overwrite flow_ratio fraction with r=t
-        t = torch.rand(B, device=x0.device)
-        r = torch.rand(B, device=x0.device)
-        t, r = torch.maximum(t, r), torch.minimum(t, r)
-        same_mask = torch.rand(B, device=x0.device) < flow_ratio
-        r = torch.where(same_mask, t, r)
-
-        e = torch.randn_like(x0)                      # Gaussian end-point
-        z = (1-t)[:, None]*x0 + t[:, None]*e          # mixture point
-        
-        # Boundary condition: v_theta(z_t, t) = u_theta(z_t, t, t)
-        v_theta = self.forward(z, t.unsqueeze(1), t.unsqueeze(1), cls_idx)
-        
-        def f(z_, t_, r_): 
-            return self.forward(z_, t_.unsqueeze(1), r_.unsqueeze(1), cls_idx)
-            
-        # JVP w.r.t. (z, r, t) along tangent (v_theta, 0, 1)
-        # Note: tangent vector is (v_theta, 0, 1) instead of (e-x, 1, 0)
-        u, dudt = torch.autograd.functional.jvp(
-            f, (z, t, r), (v_theta, torch.zeros_like(t), torch.ones_like(t)), create_graph=True)
-        
-        # Compound prediction: V_theta = u_theta + (t-r) * sg(dudt)
-        V_theta = u + (t-r)[:, None] * dudt.detach()
-        
-        # Target is ground truth conditional velocity
-        target = e - x0
-        
-        # Standard L2 loss (no weighting)
-        loss = (V_theta - target).pow(2).mean()
-        mse = (V_theta - target).pow(2).mean()
-
-        return loss, mse
+    def flow_matching_loss(self, x, cls_idx, noise_min, noise_max):
+        '''see https://arxiv.org/pdf/2210.02747 equation (23)'''
+        noise = torch.randn_like(x)
+        time = torch.rand(size=(len(x), 1), device=x.device).sigmoid()
+        noised = (1-time) * x + (noise_min + noise_max*time) * noise
+        pred = self.forward(noised, time, cls_idx)
+        return F.mse_loss(pred, noise.mul(noise_max).sub(x))
 
     @torch.no_grad()
-    def sample(self, cls_idx, n_steps=5):
-        B = len(cls_idx)
-        x = torch.randn(B, self.noise_dim, device=cls_idx.device)
-        t_vals = torch.linspace(1., 0., n_steps+1, device=x.device)
-        for i in range(n_steps):
-            t = t_vals[i].expand(B, 1)
-            r = t_vals[i+1].expand(B, 1)
-            dt = t - r
-            k1 = self.forward(x, t, r, cls_idx)
-            k2 = self.forward(x - dt*k1, r, r, cls_idx)
+    def sample(self, cls_idx, n_steps=100):
+        x = torch.randn(len(cls_idx), self.noise_dim, device=cls_idx.device)
+        dt = 1.0 / n_steps
+        for t in tqdm(torch.linspace(1, 0, n_steps, device=x.device)):
+            t = t.expand(len(x), 1)
+            k1 = self.forward(x, t, cls_idx)
+            k2 = self.forward(x - dt*k1, t - dt, cls_idx)
             x = x - (dt / 2) * (k1 + k2)
         return x
 
@@ -165,7 +127,16 @@ def init_training(cfg):
         weight_decay=cfg.weight_decay
     )
     
-    return train_iterator, val_iterator, model, opt
+    schedule = torch.cat([
+        torch.linspace(0, 1, cfg.warmup),
+        torch.logspace(0, -1, cfg.steps-cfg.warmup+1),
+    ])
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer=opt,
+        lr_lambda=schedule.__getitem__
+    )
+    
+    return train_iterator, val_iterator, model, opt, scheduler
 
 
 @torch.no_grad()
@@ -173,7 +144,6 @@ def evaluate(model, val_iterator, cfg, n_steps):
     """Run evaluation pass on validation set."""
     model.eval()
     total_loss = 0.0
-    total_mse = 0.0
     n_batches = 0
     
     for _ in range(n_steps):
@@ -181,21 +151,16 @@ def evaluate(model, val_iterator, cfg, n_steps):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_mean_flow_loss(
-            img, lbl, cfg.flow_ratio
-        )
-        
+        loss = model.flow_matching_loss(img, lbl, cfg.noise_min, cfg.noise_max)
         total_loss += loss.item()
-        total_mse += mse.item()
         n_batches += 1
     
     model.train()
     avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
-    avg_mse = total_mse / n_batches if n_batches > 0 else 0.0
-    return avg_loss, avg_mse
+    return avg_loss
 
 
-def train(model, train_iterator, val_iterator, opt, cfg):
+def train(model, train_iterator, val_iterator, opt, scheduler, cfg):
     """Run training loop with periodic validation."""
     train_loss_ema = None
     val_loss_ema = None
@@ -207,40 +172,40 @@ def train(model, train_iterator, val_iterator, opt, cfg):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_mean_flow_loss(
-            img, lbl, cfg.flow_ratio
-        )
+        loss = model.flow_matching_loss(img, lbl, cfg.noise_min, cfg.noise_max)
 
         loss.backward()
         opt.step()
         opt.zero_grad()
+        scheduler.step()
 
         train_loss_ema = ema(train_loss_ema, loss.item(), cfg.ema_beta, cfg.ema_alpha)
         
         # Periodic validation
         should_eval = (i + 1) % cfg.eval_frequency == 0
         if should_eval:
-            val_loss, val_mse = evaluate(model, val_iterator, cfg, cfg.eval_steps)
+            val_loss = evaluate(model, val_iterator, cfg, cfg.eval_steps)
             val_loss_ema = ema(val_loss_ema, val_loss, cfg.ema_beta, cfg.ema_alpha)
         
         # Logging
         if i % cfg.log_frequency == 0:
             train_info = f'train_loss={loss.item():.6f} train_loss_ema={train_loss_ema:.6f}'
             val_info = f'val_loss_ema={val_loss_ema:.6f}' if val_loss_ema is not None else 'val_loss_ema=N/A'
-            print(f'{i=:05d}  {train_info}  {val_info}  mse={mse:.6f}')
+            print(f'{i=:05d}  {train_info}  {val_info}')
         elif should_eval:
-            print(f'{i=:05d}  eval: val_loss={val_loss:.6f} val_loss_ema={val_loss_ema:.6f} val_mse={val_mse:.6f}')
+            print(f'{i=:05d}  eval: val_loss={val_loss:.6f} val_loss_ema={val_loss_ema:.6f}')
         
         final_lbl = lbl
     
     return final_lbl
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for Flow Matching reference implementation."""
     cfg = Config()
     
-    train_iterator, val_iterator, model, opt = init_training(cfg)
-    final_lbl = train(model, train_iterator, val_iterator, opt, cfg)
+    train_iterator, val_iterator, model, opt, scheduler = init_training(cfg)
+    final_lbl = train(model, train_iterator, val_iterator, opt, scheduler, cfg)
     
     smps = model.sample(final_lbl, n_steps=cfg.sample_n_steps)
     fig, axs = plt.subplots(4,4, figsize=cfg.figsize)
@@ -249,5 +214,8 @@ if __name__ == '__main__':
         ax.set_title(idx.item()); ax.axis('off')
     plt.tight_layout(); plt.show()
 
+
+if __name__ == '__main__':
+    main()
 
 
