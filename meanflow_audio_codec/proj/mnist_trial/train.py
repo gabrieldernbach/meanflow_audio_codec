@@ -13,7 +13,7 @@ import numpy as np
 import optax
 import tensorflow_datasets as tfds
 
-from meanflow_audio_codec.datasets.mnist import preprocess_images
+from meanflow_audio_codec.datasets.mnist import _preprocess_mnist_images
 from meanflow_audio_codec.evaluators.sampling import sample
 from meanflow_audio_codec.models import ConditionalConvFlow, TrainState
 from meanflow_audio_codec.trainers.training_steps import train_step_improved_mean_flow
@@ -140,7 +140,7 @@ def main():
     for step in range(start_step, n_steps):
         img, tar = next(it)
 
-        x = preprocess_images(img, normalize=True)
+        x = _preprocess_mnist_images(img, format="1d", normalize=True)
         x = jnp.asarray(x)
 
         state, loss, key = train_step_improved_mean_flow(state, key, x)

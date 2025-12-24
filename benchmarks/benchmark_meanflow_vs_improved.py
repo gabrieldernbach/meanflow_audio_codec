@@ -102,11 +102,11 @@ def train_and_track(model, train_iter_wrapper, val_iter_wrapper, opt, cfg, metho
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
         if method_name == "MeanFlow":
-            loss, mse = model.meanflow_loss(
+            loss, mse = model.mean_flow_loss(
                 img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
             )
         else:  # Improved MeanFlow
-            loss, mse = model.improved_meanflow_loss(
+            loss, mse = model.improved_mean_flow_loss(
                 img, lbl, cfg.flow_ratio
             )
 
@@ -137,11 +137,11 @@ def train_and_track(model, train_iter_wrapper, val_iter_wrapper, opt, cfg, metho
                 lbl = torch.from_numpy(lbl_np).to(cfg.device)
                 
                 if method_name == "MeanFlow":
-                    loss, mse = model.meanflow_loss(
+                    loss, mse = model.mean_flow_loss(
                         img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
                     )
                 else:
-                    loss, mse = model.improved_meanflow_loss(
+                    loss, mse = model.improved_mean_flow_loss(
                         img, lbl, cfg.flow_ratio
                     )
                 
@@ -181,11 +181,11 @@ def evaluate_sample_quality(model, val_iter_wrapper, cfg, n_samples=100, method_
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
         if method_name == "MeanFlow":
-            loss, mse = model.meanflow_loss(
+            loss, mse = model.mean_flow_loss(
                 img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
             )
         else:
-            loss, mse = model.improved_meanflow_loss(
+            loss, mse = model.improved_mean_flow_loss(
                 img, lbl, cfg.flow_ratio
             )
         

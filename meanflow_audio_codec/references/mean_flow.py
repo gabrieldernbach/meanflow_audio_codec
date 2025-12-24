@@ -79,7 +79,7 @@ class ConditionalFlow(nn.Module):
             x = blk(x, cond)
         return x
 
-    def meanflow_loss(self, x0, cls_idx, flow_ratio, gamma, c):
+    def mean_flow_loss(self, x0, cls_idx, flow_ratio, gamma, c):
         B, D = x0.shape
         # sample (t, r) with r ≤ t and overwrite flow_ratio fraction with r=t
         t = torch.rand(B, device=x0.device)
@@ -167,7 +167,7 @@ def evaluate(model, val_iterator, cfg, n_steps):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.meanflow_loss(
+        loss, mse = model.mean_flow_loss(
             img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
         )
         
@@ -193,7 +193,7 @@ def train(model, train_iterator, val_iterator, opt, cfg):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.meanflow_loss(
+        loss, mse = model.mean_flow_loss(
             img, lbl, cfg.flow_ratio, cfg.gamma, cfg.c
         )
 

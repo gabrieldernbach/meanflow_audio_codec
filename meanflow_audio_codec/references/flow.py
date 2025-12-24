@@ -78,7 +78,7 @@ class ConditionalFlow(nn.Module):
             x = blk(x, cls + t_emb)
         return x
 
-    def loss(self, x, cls_idx, noise_min, noise_max):
+    def flow_matching_loss(self, x, cls_idx, noise_min, noise_max):
         '''see https://arxiv.org/pdf/2210.02747 equation (23)'''
         noise = torch.randn_like(x)
         time = torch.rand(size=(len(x), 1), device=x.device).sigmoid()
@@ -151,7 +151,7 @@ def evaluate(model, val_iterator, cfg, n_steps):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss = model.loss(img, lbl, cfg.noise_min, cfg.noise_max)
+        loss = model.flow_matching_loss(img, lbl, cfg.noise_min, cfg.noise_max)
         total_loss += loss.item()
         n_batches += 1
     
@@ -172,7 +172,7 @@ def train(model, train_iterator, val_iterator, opt, scheduler, cfg):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss = model.loss(img, lbl, cfg.noise_min, cfg.noise_max)
+        loss = model.flow_matching_loss(img, lbl, cfg.noise_min, cfg.noise_max)
 
         loss.backward()
         opt.step()

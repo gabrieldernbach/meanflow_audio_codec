@@ -77,7 +77,7 @@ class ConditionalFlow(nn.Module):
             x = blk(x, cond)
         return x
 
-    def improved_meanflow_loss(self, x0, cls_idx, flow_ratio):
+    def improved_mean_flow_loss(self, x0, cls_idx, flow_ratio):
         """
         Improved MeanFlow loss (iMF) using v-loss formulation.
         
@@ -181,7 +181,7 @@ def evaluate(model, val_iterator, cfg, n_steps):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_meanflow_loss(
+        loss, mse = model.improved_mean_flow_loss(
             img, lbl, cfg.flow_ratio
         )
         
@@ -207,7 +207,7 @@ def train(model, train_iterator, val_iterator, opt, cfg):
         img = torch.from_numpy(img_np).to(cfg.device)
         lbl = torch.from_numpy(lbl_np).to(cfg.device)
         
-        loss, mse = model.improved_meanflow_loss(
+        loss, mse = model.improved_mean_flow_loss(
             img, lbl, cfg.flow_ratio
         )
 

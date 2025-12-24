@@ -8,7 +8,7 @@ import numpy as np
 import optax
 
 from meanflow_audio_codec.configs.config import TrainFlowConfig
-from meanflow_audio_codec.datasets.mnist import load_mnist, preprocess_images
+from meanflow_audio_codec.datasets.mnist import load_mnist
 from meanflow_audio_codec.evaluators.sampling import sample
 from meanflow_audio_codec.models import ConditionalFlow, TrainState
 from meanflow_audio_codec.trainers.training_steps import (
@@ -124,8 +124,7 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
         
         img, tar = next(it)
 
-        x = preprocess_images(img, format="1d", normalize=True)
-        x = jnp.asarray(x)
+        x = jnp.asarray(img)  # Already preprocessed by load_mnist
 
         if config.use_improved_mean_flow:
             state, loss, key = train_step_improved_mean_flow(state, key, x)

@@ -6,9 +6,38 @@ import tensorflow_datasets as tfds
 from toolz import compose
 
 # ============================================================================
-# PUBLIC API - High-level entry points
+# INTERNAL HELPERS
 # ============================================================================
 
+def _preprocess_mnist_images(
+    images: np.ndarray,
+    format: str = "1d",
+    normalize: bool = True,
+) -> np.ndarray:
+    """Preprocess MNIST images (internal helper).
+    
+    Args:
+        images: Input images of shape [B, H, W] or [B, H*W]
+        format: Output format, either "1d" (flattened) or "2d"
+        normalize: If True, normalize to [-1, 1] range
+    
+    Returns:
+        Preprocessed images
+    """
+    if format not in ("1d", "2d"):
+        raise ValueError(f"Invalid format: {format}. Must be '1d' or '2d'")
+
+    pipeline = compose(
+        lambda x: x.reshape(x.shape[0], -1) if format == "1d" else x,
+        lambda x: (x - 0.5) / 0.5 if normalize else x,
+        lambda x: x.astype(np.float32) / 255.0,
+    )
+    return pipeline(images)
+
+
+# ============================================================================
+# PUBLIC API - High-level entry points
+# ============================================================================
 
 def load_mnist(
     data_dir: str = str(Path.home() / "datasets" / "mnist"),
@@ -34,12 +63,7 @@ def load_mnist(
     images, labels = map(np.stack, [images_list, labels_list])
 
     # Preprocess images
-    pipeline = compose(
-        lambda x: x.reshape(images.shape[0], -1) if format == "1d" else x,
-        lambda x: (x - 0.5) / 0.5 if normalize else x,
-        lambda x: x.astype(np.float32) / 255.0,
-    )
-    images = pipeline(images)
+    images = _preprocess_mnist_images(images, format=format, normalize=normalize)
 
     n_samples = len(images)
     
@@ -54,29 +78,3 @@ def load_mnist(
         for i in range(0, n_samples, batch_size):
             end_idx = min(i + batch_size, n_samples)
             yield images[i:end_idx], labels[i:end_idx]
-
-
-def preprocess_images(
-    images: np.ndarray,
-    format: str = "1d",
-    normalize: bool = True,
-) -> np.ndarray:
-    """Preprocess MNIST images.
-
-    Args:
-        images: Input images of shape [B, H, W] or [B, H*W]
-        format: Output format, either "1d" (flattened) or "2d"
-        normalize: If True, normalize to [-1, 1] range
-
-    Returns:
-        Preprocessed images
-    """
-    if format not in ("1d", "2d"):
-        raise ValueError(f"Invalid format: {format}. Must be '1d' or '2d'")
-
-    pipeline = compose(
-        lambda x: x.reshape(x.shape[0], -1) if format == "1d" else x,
-        lambda x: (x - 0.5) / 0.5 if normalize else x,
-        lambda x: x.astype(np.float32) / 255.0,
-    )
-    return pipeline(images)
