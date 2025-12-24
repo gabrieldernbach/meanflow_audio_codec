@@ -197,3 +197,4 @@ Improved Mean Flow (eliminates network-dependent target, stabilizes training)
 3. **Improved Mean Flow**: Geng et al., "Improved Mean Flows: On the Challenges of Fastforward Generative Models", 2024
    - https://arxiv.org/abs/2512.02012
 
+

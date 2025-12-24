@@ -30,13 +30,14 @@ from meanflow_audio_codec.trainers.training_steps import (
     train_step, train_step_improved_mean_flow)
 from meanflow_audio_codec.trainers.utils import (
     LogWriter,
+    cleanup_old_checkpoints,
     collect_experiment_metadata,
     find_latest_checkpoint,
     generate_config_diff,
     generate_training_summary,
     load_checkpoint_and_resume,
     plot_samples,
-    save_checkpoint,
+    save_checkpoint_with_metadata,
     save_json,
 )
 from meanflow_audio_codec.utils import ema
@@ -237,14 +238,15 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
     # Handle checkpoint resume
     start_step = 0
     if resume:
-        checkpoint_path = find_latest_checkpoint(workdir)
-        if checkpoint_path is not None:
+        try:
             state_template, start_step = load_checkpoint_and_resume(
-                workdir, state_template
+                workdir, state_template, config
             )
             print(f"Resuming from checkpoint at step {start_step}")
-        else:
-            print("No checkpoint found, starting from scratch")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Failed to resume from checkpoint: {e}")
+            print("Starting from scratch")
+            start_step = 0
 
     state = state_template
 
@@ -328,8 +330,20 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
             )
 
         if step + 1 == checkpoint_step:
-            save_checkpoint(checkpoints_dir / f"step_{step + 1:05d}.msgpack", state)
+            checkpoint_path = checkpoints_dir / f"step_{step + 1:05d}.msgpack"
+            save_checkpoint_with_metadata(checkpoint_path, state, step + 1, config)
             saved_checkpoint = True
+            
+            # Cleanup old checkpoints if configured
+            if config.max_checkpoints_to_keep is not None:
+                removed = cleanup_old_checkpoints(
+                    workdir,
+                    config.max_checkpoints_to_keep,
+                    keep_final=False,  # Don't keep final yet, we're still training
+                    final_step=None,
+                )
+                if removed:
+                    print(f"Cleaned up {len(removed)} old checkpoint(s)")
 
     # Final sample
     # TODO: Replace with actual encoder latents (encode a reference image)
@@ -361,7 +375,19 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
     )
 
     if not saved_checkpoint:
-        save_checkpoint(checkpoints_dir / f"step_{config.n_steps:05d}.msgpack", state)
+        checkpoint_path = checkpoints_dir / f"step_{config.n_steps:05d}.msgpack"
+        save_checkpoint_with_metadata(checkpoint_path, state, config.n_steps, config)
+    
+    # Final cleanup if configured
+    if config.max_checkpoints_to_keep is not None:
+        removed = cleanup_old_checkpoints(
+            workdir,
+            config.max_checkpoints_to_keep,
+            keep_final=True,
+            final_step=config.n_steps,
+        )
+        if removed:
+            print(f"Cleaned up {len(removed)} old checkpoint(s)")
     
     # End profiling and log summary
     training_summary = profiler.end_training(config.n_steps)

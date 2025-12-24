@@ -1,3 +1,35 @@
+"""Flow Strategy Pattern Implementation
+
+Implements three flow-based generative methods using the strategy pattern.
+
+## Comparison
+
+| Aspect | Flow Matching | Mean Flow | Improved Mean Flow |
+|--------|--------------|-----------|-------------------|
+| Time Inputs | `t` only | `t, r` (r ≤ t) | `t, r` (r ≤ t) |
+| Loss Type | Direct regression | Adaptive weighted | Standard regression |
+| Target | `e - x` | Network-dependent | Network-independent |
+| JVP Direction | N/A | `(e-x, 1, 0)` | `(v_θ, 0, 1)` |
+| Sampling Steps | ~100 | 2-5 | 2-5 |
+| Speedup vs FM | 1× | 20-50× | 20-50× |
+
+## Key Differences
+
+**Flow Matching**: Single-time `(x, t, cls_idx)`, MSE on `v_θ(z_t, t) ≈ (e - x)`.
+
+**Mean Flow**: Dual-time with average velocity `u(z_t, r, t)`, adaptive reweighting
+`w = 1/(error² + c)^(1-γ)`. Hyperparameters: `gamma=0.5`, `c=1e-3`, `flow_ratio=0.5`.
+
+**Improved Mean Flow**: Dual-time with boundary condition `v_θ = u_θ(t,t)`, network-independent
+target via JVP along `(v_θ, 0, 1)`. Hyperparameters: `flow_ratio=0.5` only.
+
+## References
+
+1. Flow Matching: https://arxiv.org/pdf/2210.02747
+2. Mean Flow: https://arxiv.org/abs/2505.13447
+3. Improved Mean Flow: https://arxiv.org/abs/2512.02012
+"""
+
 from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F

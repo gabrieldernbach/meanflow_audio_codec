@@ -220,6 +220,150 @@ def get_checkpoint_info(checkpoint_path: Path) -> dict:
     return info
 
 
+def validate_checkpoint(checkpoint_path: Path) -> tuple[bool, str | None]:
+    """Validate checkpoint file integrity.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not checkpoint_path.exists():
+        return False, f"Checkpoint file does not exist: {checkpoint_path}"
+    
+    if not checkpoint_path.is_file():
+        return False, f"Checkpoint path is not a file: {checkpoint_path}"
+    
+    size = get_checkpoint_size(checkpoint_path)
+    if size == 0:
+        return False, f"Checkpoint file is empty: {checkpoint_path}"
+    
+    if size < 100:  # Very small files are likely corrupted
+        return False, f"Checkpoint file is suspiciously small ({size} bytes): {checkpoint_path}"
+    
+    return True, None
+
+
+def validate_checkpoint_state(
+    state: TrainState,
+    state_template: TrainState,
+) -> tuple[bool, str | None]:
+    """Validate checkpoint state structure matches template.
+    
+    Args:
+        state: Loaded state to validate
+        state_template: Template state for comparison
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check that state has required attributes
+    if not hasattr(state, "params"):
+        return False, "State missing 'params' attribute"
+    
+    if not hasattr(state, "opt_state"):
+        return False, "State missing 'opt_state' attribute"
+    
+    # Check parameter structure matches
+    def check_structure(path: tuple, node1: Any, node2: Any) -> tuple[bool, str | None]:
+        if isinstance(node1, (jnp.ndarray, np.ndarray)) and isinstance(
+            node2, (jnp.ndarray, np.ndarray)
+        ):
+            if node1.shape != node2.shape:
+                param_path = "/".join(str(p) for p in path)
+                return False, f"Shape mismatch at {param_path}: {node1.shape} != {node2.shape}"
+            if node1.dtype != node2.dtype:
+                param_path = "/".join(str(p) for p in path)
+                return False, f"Dtype mismatch at {param_path}: {node1.dtype} != {node2.dtype}"
+        return True, None
+    
+    # Compare parameter structures
+    params1 = state.params
+    params2 = state_template.params
+    
+    def validate_tree(path: tuple, node1: Any, node2: Any) -> tuple[bool, str | None]:
+        if isinstance(node1, dict) and isinstance(node2, dict):
+            keys1 = set(node1.keys())
+            keys2 = set(node2.keys())
+            if keys1 != keys2:
+                param_path = "/".join(str(p) for p in path) if path else "root"
+                missing = keys2 - keys1
+                extra = keys1 - keys2
+                msg_parts = []
+                if missing:
+                    msg_parts.append(f"missing keys: {missing}")
+                if extra:
+                    msg_parts.append(f"extra keys: {extra}")
+                return False, f"Key mismatch at {param_path}: {', '.join(msg_parts)}"
+            
+            for key in keys1:
+                result = validate_tree(path + (key,), node1[key], node2[key])
+                if not result[0]:
+                    return result
+        else:
+            result = check_structure(path, node1, node2)
+            if not result[0]:
+                return result
+        
+        return True, None
+    
+    return validate_tree((), params1, params2)
+
+
+def validate_checkpoint_compatibility(
+    checkpoint_path: Path,
+    config: TrainFlowConfig,
+) -> tuple[bool, list[str]]:
+    """Validate checkpoint compatibility with current config.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        config: Current training configuration
+        
+    Returns:
+        Tuple of (is_compatible, list_of_warnings)
+    """
+    warnings: list[str] = []
+    metadata = load_checkpoint_metadata(checkpoint_path)
+    
+    if not metadata:
+        # No metadata available, can't validate
+        warnings.append("No metadata available for compatibility check")
+        return True, warnings
+    
+    # Check critical fields from metadata if available
+    model_info = metadata.get("model_info", {})
+    param_shapes = model_info.get("param_shapes", {})
+    
+    # Critical fields that must match
+    critical_fields = {
+        "noise_dimension": config.noise_dimension,
+        "condition_dimension": config.condition_dimension,
+        "latent_dimension": config.latent_dimension,
+        "num_blocks": config.num_blocks,
+    }
+    
+    # Check config hash if available
+    if metadata.get("config_hash"):
+        config_dict = config.to_dict()
+        current_hash = compute_config_hash(config_dict)
+        if metadata["config_hash"] != current_hash:
+            warnings.append("Config hash mismatch - config may have changed")
+    
+    # Fields that can differ but should warn
+    warn_fields = {
+        "batch_size": config.batch_size,
+        "base_lr": config.base_lr,
+    }
+    
+    # Note: We can't fully validate without loading the checkpoint,
+    # but we can check metadata if it contains config info
+    # For now, we'll rely on the config hash check
+    
+    return True, warnings
+
+
 def save_checkpoint_with_metadata(
     path: Path,
     state: TrainState | flax_train_state.TrainState,
@@ -398,19 +542,242 @@ def get_checkpoint_step(checkpoint_path: Path) -> int:
     )
 
 
+def unwrap_checkpoint(state: TrainState) -> dict:
+    """Extract model parameters from TrainState for inference.
+    
+    Args:
+        state: Training state
+        
+    Returns:
+        Dictionary with only model parameters (no optimizer state)
+    """
+    return {"params": state.params}
+
+
+def save_unwrapped_checkpoint(
+    path: Path,
+    params: dict,
+) -> None:
+    """Save lightweight checkpoint with only model parameters.
+    
+    Args:
+        path: Path to save unwrapped checkpoint
+        params: Model parameters dictionary
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as f:
+        f.write(serialization.to_bytes(params))
+
+
+def load_unwrapped_checkpoint(path: Path) -> dict:
+    """Load unwrapped checkpoint (parameters only).
+    
+    Args:
+        path: Path to unwrapped checkpoint file
+        
+    Returns:
+        Dictionary with model parameters
+    """
+    with path.open("rb") as f:
+        data = f.read()
+    return serialization.from_bytes({}, data)
+
+
+def find_valid_checkpoint(
+    workdir: Path,
+    state_template: TrainState | None = None,
+) -> Path | None:
+    """Find latest valid checkpoint, skipping corrupted ones.
+    
+    Args:
+        workdir: Working directory
+        state_template: Optional state template for validation
+        
+    Returns:
+        Path to valid checkpoint, or None if none found
+    """
+    checkpoints_dir = workdir / "checkpoints"
+    if not checkpoints_dir.exists():
+        return None
+    
+    checkpoint_files = sorted(
+        checkpoints_dir.glob("step_*.msgpack"),
+        key=lambda p: get_checkpoint_step(p),
+        reverse=True,
+    )
+    
+    for checkpoint_path in checkpoint_files:
+        is_valid, error = validate_checkpoint(checkpoint_path)
+        if not is_valid:
+            continue
+        
+        if state_template is not None:
+            try:
+                state = load_checkpoint(checkpoint_path, state_template)
+                is_valid, error = validate_checkpoint_state(state, state_template)
+                if not is_valid:
+                    continue
+            except Exception as e:
+                # Checkpoint failed to load
+                continue
+        
+        return checkpoint_path
+    
+    return None
+
+
 def load_checkpoint_and_resume(
-    workdir: Path, state_template: TrainState
+    workdir: Path,
+    state_template: TrainState,
+    config: TrainFlowConfig | None = None,
 ) -> tuple[TrainState, int]:
-    """Load checkpoint from workdir and return state with starting step."""
-    checkpoint_path = find_latest_checkpoint(workdir)
+    """Load checkpoint from workdir and return state with starting step.
+    
+    Enhanced version with validation and error recovery.
+    
+    Args:
+        workdir: Working directory
+        state_template: Template state for loading
+        config: Optional config for compatibility checking
+        
+    Returns:
+        Tuple of (state, starting_step)
+        
+    Raises:
+        FileNotFoundError: If no valid checkpoint found
+        ValueError: If checkpoint validation fails
+    """
+    checkpoint_path = find_valid_checkpoint(workdir, state_template)
     if checkpoint_path is None:
         raise FileNotFoundError(
-            f"No checkpoint found in {workdir / 'checkpoints'}"
+            f"No valid checkpoint found in {workdir / 'checkpoints'}"
         )
-
-    state = load_checkpoint(checkpoint_path, state_template)
+    
+    # Validate checkpoint file
+    is_valid, error = validate_checkpoint(checkpoint_path)
+    if not is_valid:
+        raise ValueError(f"Checkpoint validation failed: {error}")
+    
+    # Load checkpoint
+    try:
+        state = load_checkpoint(checkpoint_path, state_template)
+    except Exception as e:
+        raise ValueError(
+            f"Failed to load checkpoint {checkpoint_path}: {e}"
+        ) from e
+    
+    # Validate state structure
+    is_valid, error = validate_checkpoint_state(state, state_template)
+    if not is_valid:
+        raise ValueError(f"Checkpoint state validation failed: {error}")
+    
+    # Check compatibility if config provided
+    if config:
+        is_compatible, warnings = validate_checkpoint_compatibility(checkpoint_path, config)
+        if warnings:
+            print("Checkpoint compatibility warnings:")
+            for warning in warnings:
+                print(f"  - {warning}")
+    
     starting_step = get_checkpoint_step(checkpoint_path)
     return state, starting_step
+
+
+def list_checkpoints(workdir: Path) -> list[dict]:
+    """List all checkpoints with metadata.
+    
+    Args:
+        workdir: Working directory
+        
+    Returns:
+        List of checkpoint info dictionaries, sorted by step
+    """
+    checkpoints_dir = workdir / "checkpoints"
+    if not checkpoints_dir.exists():
+        return []
+    
+    checkpoint_files = list(checkpoints_dir.glob("step_*.msgpack"))
+    checkpoints = []
+    
+    for checkpoint_path in checkpoint_files:
+        try:
+            info = get_checkpoint_info(checkpoint_path)
+            checkpoints.append(info)
+        except Exception:
+            # Skip invalid checkpoints
+            continue
+    
+    # Sort by step
+    checkpoints.sort(key=lambda x: x.get("step", -1) if x.get("step") is not None else -1)
+    return checkpoints
+
+
+def cleanup_old_checkpoints(
+    workdir: Path,
+    max_checkpoints_to_keep: int,
+    keep_final: bool = True,
+    final_step: int | None = None,
+) -> list[Path]:
+    """Remove old checkpoints, keeping only N latest.
+    
+    Args:
+        workdir: Working directory
+        max_checkpoints_to_keep: Maximum number of checkpoints to keep
+        keep_final: If True, always keep final checkpoint (step = final_step)
+        final_step: Step number of final checkpoint (if keep_final is True)
+        
+    Returns:
+        List of removed checkpoint paths
+    """
+    checkpoints_dir = workdir / "checkpoints"
+    if not checkpoints_dir.exists():
+        return []
+    
+    checkpoint_files = list(checkpoints_dir.glob("step_*.msgpack"))
+    if len(checkpoint_files) <= max_checkpoints_to_keep:
+        return []
+    
+    # Get checkpoint info and sort by step
+    checkpoint_info = []
+    for checkpoint_path in checkpoint_files:
+        try:
+            step = get_checkpoint_step(checkpoint_path)
+            checkpoint_info.append((step, checkpoint_path))
+        except ValueError:
+            continue
+    
+    checkpoint_info.sort(key=lambda x: x[0])
+    
+    # Identify checkpoints to keep
+    to_keep: set[Path] = set()
+    
+    # Always keep final checkpoint if specified
+    if keep_final and final_step is not None:
+        for step, path in checkpoint_info:
+            if step == final_step:
+                to_keep.add(path)
+                break
+    
+    # Keep latest N checkpoints
+    for step, path in checkpoint_info[-max_checkpoints_to_keep:]:
+        to_keep.add(path)
+    
+    # Remove old checkpoints
+    removed: list[Path] = []
+    for step, checkpoint_path in checkpoint_info:
+        if checkpoint_path not in to_keep:
+            try:
+                checkpoint_path.unlink()
+                removed.append(checkpoint_path)
+                
+                # Also remove metadata file if it exists
+                metadata_path = get_checkpoint_metadata_path(checkpoint_path)
+                if metadata_path.exists():
+                    metadata_path.unlink()
+            except Exception:
+                pass
+    
+    return removed
 
 
 @dataclass

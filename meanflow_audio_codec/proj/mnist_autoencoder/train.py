@@ -19,7 +19,7 @@ from meanflow_audio_codec.trainers.utils import (
     find_latest_checkpoint,
     load_checkpoint_and_resume,
     plot_samples,
-    save_checkpoint,
+    save_checkpoint_with_metadata,
 )
 from meanflow_audio_codec.utils import ema
 
@@ -134,7 +134,7 @@ def main():
         if checkpoint_path is not None and checkpoint_path.stat().st_size > 0:
             print(f"Found checkpoint: {checkpoint_path} ({checkpoint_path.stat().st_size / 1e6:.1f}MB)")
             try:
-                state_template, start_step = load_checkpoint_and_resume(workdir, state_template)
+                state_template, start_step = load_checkpoint_and_resume(workdir, state_template, config=None)
                 print(f"✓ Resuming from checkpoint at step {start_step}")
             except Exception as e:
                 print(f"⚠ Failed to load checkpoint: {e}")
@@ -219,8 +219,10 @@ def main():
                 )
 
             # Save checkpoint
-            save_checkpoint(checkpoints_dir / f"step_{step:05d}.msgpack", state)
-            save_checkpoint(checkpoints_dir / "latest.msgpack", state)
+            checkpoint_path = checkpoints_dir / f"step_{step:05d}.msgpack"
+            save_checkpoint_with_metadata(checkpoint_path, state, step, config=None)
+            latest_path = checkpoints_dir / "latest.msgpack"
+            save_checkpoint_with_metadata(latest_path, state, step, config=None)
             msg = f"{step:<6} {loss_val:<12.6f} {loss_avg:<12.6f} ✓ saved"
             print(msg)
             stdout_file.write(msg + "\n")

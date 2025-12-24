@@ -200,8 +200,7 @@ def train(model, train_iterator, val_iterator, opt, scheduler, cfg):
     return final_lbl
 
 
-def main():
-    """Main entry point for Flow Matching reference implementation."""
+if __name__ == '__main__':
     cfg = Config()
     
     train_iterator, val_iterator, model, opt, scheduler = init_training(cfg)
@@ -214,7 +213,4 @@ def main():
         ax.set_title(idx.item()); ax.axis('off')
     plt.tight_layout(); plt.show()
 
-
-if __name__ == '__main__':
-    main()
 
