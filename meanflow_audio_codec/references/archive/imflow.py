@@ -1,3 +1,48 @@
+"""PyTorch implementation of Improved Mean Flow for MNIST digit generation.
+
+This module implements Improved Mean Flow / iMF (Geng et al., 2024) for class-conditional
+generation of MNIST digits (classes 0-9). Improved Mean Flow reformulates Mean Flow to
+eliminate network-dependent targets for more stable training.
+
+## Method Overview
+
+- **Method**: Improved Mean Flow (iMF)
+- **Conditioning**: Class-conditional generation (MNIST digit classes 0-9)
+- **Architecture**: Similar MLP-based residual blocks as flow matching
+- **Loss**: Improved mean flow loss with v-loss formulation
+- **Sampling**: Heun's method (2nd order Runge-Kutta) ODE solver over few steps (n_steps=2 default)
+
+## Key Differences from Mean Flow
+
+- Boundary condition: v_theta(z_t, t) = u_theta(z_t, t, t) (explicit velocity prediction)
+- JVP uses v_theta instead of e - x in JVP computation
+- Compound prediction: V_theta = u_theta + (t-r) * sg(JVP)
+- Standard L2 loss (no adaptive reweighting)
+- Simpler hyperparameters (flow_ratio=0.5 only, no gamma or c)
+
+## Key Components
+
+- `ConditionalFlow`: Main model with dual-time embeddings
+- `improved_mean_flow_loss()`: Loss function with v-loss formulation
+- `sample()`: Efficient sampling with 2-5 steps
+
+## Usage
+
+```python
+from meanflow_audio_codec.references.imflow import ConditionalFlow, Config, init_training
+
+cfg = Config()
+train_iterator, val_iterator, model, opt = init_training(cfg)
+# ... training loop ...
+samples = model.sample(labels, n_steps=cfg.sample_n_steps)
+```
+
+## References
+
+Geng et al., "Improved Mean Flows: On the Challenges of Fastforward Generative Models", 2024
+https://arxiv.org/abs/2512.02012
+"""
+
 from dataclasses import dataclass
 import torch, torch.nn as nn, torch.nn.functional as F
 from functools import partial

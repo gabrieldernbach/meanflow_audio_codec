@@ -1,0 +1,30 @@
+{
+  "architecture": "mlp_mixer",
+  "base_lr": 0.0001,
+  "batch_size": 128,
+  "c": 1.0,
+  "checkpoint_step": 200,
+  "condition_dimension": 128,
+  "data_dir": null,
+  "dataset": "mnist",
+  "flow_ratio": 1.0,
+  "gamma": 1.0,
+  "latent_dimension": 256,
+  "method": "mean_flow",
+  "n_steps": 5000,
+  "noise_dimension": 784,
+  "num_blocks": 8,
+  "sample_every": 500,
+  "sample_seed": 42,
+  "sample_steps": 50,
+  "seed": 42,
+  "tokenization_config": {
+    "patch_length": 128,
+    "patch_size": 4
+  },
+  "tokenization_strategy": "reshape",
+  "use_improved_mean_flow": false,
+  "use_stop_gradient": true,
+  "weight_decay": 0.0001,
+  "workdir": "./outputs/method=mean_flow--architecture=mlp_mixer--dataset=mnist--tokenization=reshape"
+}

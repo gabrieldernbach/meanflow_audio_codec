@@ -124,9 +124,10 @@ meanflow_audio_codec/
 │   ├── preprocessing/      # MDCT utilities for audio encoding
 │   └── configs/           # Configuration dataclasses
 ├── test/                   # Unit tests (including MDCT tests)
-├── references/             # Trusted PyTorch reference implementations
-│   ├── flow_matching_mnist.py  # Flow Matching reference
-│   └── mean_flow_mnist.py      # Mean Flow reference
+├── meanflow_audio_codec/   # Main package
+│   ├── tools/              # Utility scripts and benchmarks
+│   │   └── benchmarks/     # Performance benchmark scripts
+│   └── references/         # Trusted PyTorch reference implementations
 ├── documentation/          # Research notes and equations
 │   ├── improved_meanflow_key_eqn.md  # iMF mathematical formulation
 │   └── mdct/               # MDCT codec documentation

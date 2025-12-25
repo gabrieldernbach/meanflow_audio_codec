@@ -395,9 +395,10 @@ class TrainFlowConfig:
                 if self.run_name is not None:
                     run_name = self.run_name
                 else:
+                    method_config = object.__getattribute__(self, "_method")
                     tag = (
                         "improved"
-                        if self.method.use_improved_mean_flow
+                        if method_config.use_improved_mean_flow
                         else "baseline"
                     )
                     run_name = f"seed{self.base.seed}_{tag}"
@@ -531,10 +532,6 @@ class TrainFlowConfig:
     @property
     def model(self) -> ModelConfig:
         return object.__getattribute__(self, "_model")
-    
-    @property
-    def method(self) -> MethodConfig:
-        return object.__getattribute__(self, "_method")
     
     @property
     def training(self) -> TrainingConfig:
@@ -797,6 +794,8 @@ def migrate_config_v1_to_v2(data: dict) -> dict:
         training["workdir"] = data["workdir"]
     if "checkpoint_step" in data:
         training["checkpoint_step"] = data["checkpoint_step"]
+    if "max_checkpoints_to_keep" in data:
+        training["max_checkpoints_to_keep"] = data["max_checkpoints_to_keep"]
     
     # Build hierarchical structure
     result = {

@@ -1,9 +1,19 @@
+from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from meanflow_audio_codec.references.config import ModelConfig
 from meanflow_audio_codec.references.strategy import FlowStrategy
+
+
+@dataclass
+class ModelConfig:
+    """Model architecture configuration."""
+    noise_dim: int = 28 * 28
+    cond_dim: int = 512
+    latent_dim: int = 1024
+    n_blocks: int = 10
+    n_classes: int = 10
 
 
 def sinusoidal_embedding(x, dim):

@@ -73,7 +73,12 @@ The MDCT implementation is **fully optimized** with all major performance improv
 
 ## Performance Benchmarks
 
-See [`benchmarks/benchmark_mdct.py`](../../../benchmarks/benchmark_mdct.py) for comprehensive performance comparisons between:
+See [`meanflow_audio_codec/tools/benchmarks/benchmark_mdct.py`](../../../../meanflow_audio_codec/tools/benchmarks/benchmark_mdct.py) for comprehensive performance comparisons between:
+
+Or run the benchmark as:
+```bash
+uv run python -m meanflow_audio_codec.tools.benchmarks.benchmark_mdct
+```
 - NumPy baseline
 - JAX direct implementation (Metal and CPU)
 - JAX FFT implementation (Metal and CPU)

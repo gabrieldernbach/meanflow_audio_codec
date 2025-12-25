@@ -1,7 +1,7 @@
 """
 Standalone benchmark for torch implementation that can be run in flowmo environment.
 """
-import os
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -117,37 +117,39 @@ def benchmark_torch_dataloader(
 
 def main():
     """Run torch benchmark."""
-    # Find data directory
-    data_dir = os.environ.get("AUDIO_DATA_DIR", None)
-    if data_dir is None:
-        # Try common locations
-        possible_dirs = [
-            Path.home() / "datasets" / "wavegen",
-            Path.home() / "git" / "flowmo" / "downloads",
-        ]
-        for dir_path in possible_dirs:
-            if dir_path.exists():
-                data_dir = str(dir_path)
-                break
+    parser = argparse.ArgumentParser(
+        description="Benchmark torch dataloader implementation",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        required=True,
+        help="Path to directory containing MP3 audio files",
+    )
+    args = parser.parse_args()
     
-    if data_dir is None:
-        print("Error: Could not find audio data directory.")
-        print("Please set AUDIO_DATA_DIR environment variable")
-        return
+    # Validate data directory
+    data_dir = args.data_dir
+    if not data_dir.exists():
+        raise FileNotFoundError(
+            f"Data directory does not exist: {data_dir}"
+        )
     
-    data_path = Path(data_dir)
-    if not data_path.exists():
-        print(f"Error: Audio data directory does not exist: {data_dir}")
-        return
+    if not data_dir.is_dir():
+        raise ValueError(
+            f"Data directory path is not a directory: {data_dir}"
+        )
     
     # Check for audio files
     files = [
-        f for f in data_path.iterdir()
+        f for f in data_dir.iterdir()
         if f.suffix.lower() == ".mp3" and f.is_file()
     ]
     if not files:
-        print(f"Error: No MP3 files found in {data_dir}")
-        return
+        raise ValueError(
+            f"No MP3 files found in data directory: {data_dir}"
+        )
     
     print(f"Found {len(files)} audio files in {data_dir}")
     
@@ -175,7 +177,7 @@ def main():
     
     # Benchmark torch implementation
     torch_results = benchmark_torch_dataloader(
-        data_dir=data_dir,
+        data_dir=str(data_dir),
         batch_size=batch_size,
         frame_sz=frame_sz,
         buffer_size=buffer_size,

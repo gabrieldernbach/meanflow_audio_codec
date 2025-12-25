@@ -16,10 +16,10 @@ import json
 import time
 from collections import defaultdict
 
-from meanflow_audio_codec.references.mean_flow import (
+from meanflow_audio_codec.references.mflow import (
     Config, ConditionalFlow, init_training
 )
-from meanflow_audio_codec.references.improved_mean_flow import (
+from meanflow_audio_codec.references.imflow import (
     Config as ImprovedConfig,
     ConditionalFlow as ImprovedConditionalFlow,
     init_training as init_training_improved

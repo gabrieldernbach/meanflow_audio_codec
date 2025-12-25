@@ -3,7 +3,7 @@ Benchmark script to compare JAX audio.py implementation with torch flowmo implem
 
 Measures throughput (batches/second and samples/second) for both implementations.
 """
-import os
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -207,41 +207,41 @@ def benchmark_torch_dataloader(
 
 def main():
     """Run benchmarks for both implementations."""
-    # Find data directory
-    data_dir = os.environ.get("AUDIO_DATA_DIR", None)
-    if data_dir is None:
-        # Try common locations
-        possible_dirs = [
-            Path.home() / "datasets" / "wavegen",
-            Path.home() / "git" / "flowmo" / "downloads",
-        ]
-        for dir_path in possible_dirs:
-            if dir_path.exists():
-                data_dir = str(dir_path)
-                break
+    parser = argparse.ArgumentParser(
+        description="Benchmark JAX vs torch audio dataloader implementations",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        required=True,
+        help="Path to directory containing audio files (MP3, WAV, FLAC, M4A, OGG)",
+    )
+    args = parser.parse_args()
     
-    if data_dir is None:
-        print("Error: Could not find audio data directory.")
-        print("Please set AUDIO_DATA_DIR environment variable or ensure")
-        print("one of the following exists:")
-        for dir_path in possible_dirs:
-            print(f"  - {dir_path}")
-        return
+    # Validate data directory
+    data_dir = args.data_dir
+    if not data_dir.exists():
+        raise FileNotFoundError(
+            f"Data directory does not exist: {data_dir}"
+        )
     
-    data_path = Path(data_dir)
-    if not data_path.exists():
-        print(f"Error: Audio data directory does not exist: {data_dir}")
-        return
+    if not data_dir.is_dir():
+        raise ValueError(
+            f"Data directory path is not a directory: {data_dir}"
+        )
     
     # Check for audio files
     audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
     files = [
-        f for f in data_path.iterdir()
+        f for f in data_dir.iterdir()
         if f.suffix.lower() in audio_extensions and f.is_file()
     ]
     if not files:
-        print(f"Error: No audio files found in {data_dir}")
-        return
+        raise ValueError(
+            f"No audio files found in data directory: {data_dir}. "
+            f"Expected files with extensions: {', '.join(audio_extensions)}"
+        )
     
     print(f"Found {len(files)} audio files in {data_dir}")
     
@@ -269,7 +269,7 @@ def main():
     
     # Benchmark JAX implementation
     jax_results = benchmark_jax_pipeline(
-        data_dir=data_dir,
+        data_dir=str(data_dir),
         batch_size=batch_size,
         frame_sz=frame_sz,
         prefetch=prefetch,
@@ -283,7 +283,7 @@ def main():
     torch_results = None
     if TORCH_AVAILABLE:
         torch_results = benchmark_torch_dataloader(
-            data_dir=data_dir,
+            data_dir=str(data_dir),
             batch_size=batch_size,
             frame_sz=frame_sz,
             buffer_size=buffer_size,

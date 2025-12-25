@@ -1,0 +1,26 @@
+{
+  "architecture": "convnet",
+  "base_lr": 0.0001,
+  "batch_size": 128,
+  "checkpoint_step": 200,
+  "condition_dimension": 128,
+  "data_dir": null,
+  "dataset": "audio",
+  "latent_dimension": 256,
+  "method": "flow_matching",
+  "n_steps": 5000,
+  "noise_dimension": 196608,
+  "num_blocks": 8,
+  "sample_every": 500,
+  "sample_seed": 42,
+  "sample_steps": 50,
+  "seed": 42,
+  "tokenization_config": {
+    "patch_length": 128,
+    "patch_size": 4
+  },
+  "tokenization_strategy": "reshape",
+  "use_improved_mean_flow": false,
+  "weight_decay": 0.0001,
+  "workdir": "./outputs/method=flow_matching--architecture=convnet--dataset=audio--tokenization=reshape"
+}

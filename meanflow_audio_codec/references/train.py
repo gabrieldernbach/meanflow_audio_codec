@@ -1,10 +1,28 @@
+from dataclasses import dataclass
 import torch
 import matplotlib.pyplot as plt
 
 from meanflow_audio_codec.datasets.mnist import load_mnist
-from meanflow_audio_codec.references.config import ModelConfig, TrainConfig, FlowStrategyConfig
-from meanflow_audio_codec.references.strategy import FlowStrategy, get_strategy
-from meanflow_audio_codec.references.model import ConditionalFlow
+from meanflow_audio_codec.references.model import ConditionalFlow, ModelConfig
+from meanflow_audio_codec.references.strategy import FlowStrategy, FlowStrategyConfig, get_strategy
+
+
+@dataclass
+class TrainConfig:
+    """Training configuration."""
+    batch_size: int = 512
+    steps: int = 8_000
+    warmup: int = 100
+    device: str = 'mps'
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-6
+    sample_n_steps: int = 100
+    ema_beta: float = 0.99
+    ema_alpha: float = 0.01
+    log_frequency: int = 50
+    eval_frequency: int = 200
+    eval_steps: int = 100
+    figsize: tuple[int, int] = (6, 6)
 
 
 def ema(mu, dx, beta, alpha): 

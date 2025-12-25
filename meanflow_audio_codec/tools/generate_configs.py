@@ -127,11 +127,8 @@ def generate_base_configs(output_dir: Path) -> list[Path]:
                     config.update(DATASET_DEFAULTS[dataset])
                     config.update(TOKENIZATION_CONFIGS[tokenization])
                     
-                    # Set workdir
-                    config["workdir"] = str(
-                        output_dir.parent
-                        / f"method={method}--architecture={architecture}--dataset={dataset}--tokenization={tokenization}"
-                    )
+                    # Set workdir (relative to project root)
+                    config["workdir"] = f"./outputs/method={method}--architecture={architecture}--dataset={dataset}--tokenization={tokenization}"
                     
                     # Generate filename
                     filename = (

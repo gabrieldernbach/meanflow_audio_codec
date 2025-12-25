@@ -1,3 +1,40 @@
+"""PyTorch implementation of conditional Flow Matching for MNIST digit generation.
+
+This module implements standard conditional Flow Matching (Lipman et al., 2023) for
+class-conditional generation of MNIST digits (classes 0-9).
+
+## Method Overview
+
+- **Method**: Flow Matching (continuous normalizing flows)
+- **Conditioning**: Class-conditional generation (MNIST digit classes 0-9)
+- **Architecture**: MLP-based residual blocks with adaptive layer normalization
+- **Loss**: Flow matching objective (see equation 23 in https://arxiv.org/pdf/2210.02747)
+- **Sampling**: Heun's method (2nd order Runge-Kutta) ODE solver over 100 steps (default)
+
+## Key Components
+
+- `ConditionalFlow`: Main model with class embeddings and time embeddings
+- `ConditionalResidualBlock`: Residual block with feature-wise modulation (AdaLN)
+- `flow_matching_loss()`: Loss function with linear interpolation schedule
+- `sample()`: Heun's method ODE solver for generation
+
+## Usage
+
+```python
+from meanflow_audio_codec.references.flow import ConditionalFlow, Config, init_training
+
+cfg = Config()
+train_iterator, val_iterator, model, opt, scheduler = init_training(cfg)
+# ... training loop ...
+samples = model.sample(labels, n_steps=cfg.sample_n_steps)
+```
+
+## References
+
+Lipman et al., "Flow Matching for Generative Modeling", 2023
+https://arxiv.org/pdf/2210.02747
+"""
+
 from dataclasses import dataclass
 import torch, torch.nn as nn, torch.nn.functional as F
 from functools import partial

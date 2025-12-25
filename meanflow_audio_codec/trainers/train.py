@@ -8,9 +8,15 @@ import numpy as np
 import optax
 
 from meanflow_audio_codec.configs.config import TrainFlowConfig
+from meanflow_audio_codec.datasets.audio import build_audio_pipeline
 from meanflow_audio_codec.datasets.mnist import load_mnist
 from meanflow_audio_codec.evaluators.sampling import sample
 from meanflow_audio_codec.models import ConditionalFlow, TrainState
+from meanflow_audio_codec.preprocessing.tokenization_utils import (
+    compute_token_shape,
+    compute_tokenized_dimension,
+    create_tokenization_strategy,
+)
 from meanflow_audio_codec.trainers.loss_strategies import (
     FlowMatchingLoss,
     ImprovedMeanFlowLoss,
@@ -159,11 +165,33 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
             f"condition_dimension must be even, got {config.condition_dimension}"
         )
 
-    # Validate data_dir - use default if not provided
+    # Validate data_dir is provided
     if config.data_dir is None:
-        data_dir = str(Path.home() / "datasets" / "mnist")
+        raise ValueError(
+            "config.data_dir must be provided. It cannot be None. "
+            "Please specify a valid data directory path in your configuration."
+        )
+    
+    data_dir = config.data_dir
+
+    # Setup tokenization strategy
+    tokenization = create_tokenization_strategy(config)
+    
+    # Determine effective noise dimension (tokenized if tokenization is used)
+    original_noise_dim = config.noise_dimension
+    token_shape = None
+    if tokenization is not None:
+        dataset_name = config.dataset or "mnist"
+        effective_noise_dim = compute_tokenized_dimension(
+            tokenization, original_noise_dim, dataset_name
+        )
+        token_shape = compute_token_shape(tokenization, original_noise_dim, dataset_name)
+        print(f"Using tokenization: {config.tokenization_strategy}")
+        print(f"Original dimension: {original_noise_dim} -> Tokenized dimension: {effective_noise_dim}")
+        print(f"Token shape: {token_shape} (n_tokens, token_dim)")
     else:
-        data_dir = config.data_dir
+        effective_noise_dim = original_noise_dim
+        print(f"No tokenization, using original dimension: {original_noise_dim}")
 
     # Setup workdir structure
     workdir = config.workdir
@@ -197,9 +225,9 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
             if config_diff.get("removed"):
                 print(f"  Removed parameters: {', '.join(config_diff['removed'])}")
 
-    # Initialize model
+    # Initialize model with effective noise dimension (tokenized if applicable)
     model = ConditionalFlow(
-        noise_dimension=config.noise_dimension,
+        noise_dimension=effective_noise_dim,
         condition_dimension=config.condition_dimension,
         latent_dimension=config.latent_dimension,
         num_blocks=config.num_blocks,
@@ -250,8 +278,34 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
 
     state = state_template
 
-    # Setup data loading
-    it = load_mnist(data_dir=data_dir, split="train", batch_size=config.batch_size)
+    # Setup data loading based on dataset
+    dataset_name = config.dataset or "mnist"
+    if dataset_name == "mnist":
+        it = load_mnist(data_dir=data_dir, split="train", batch_size=config.batch_size)
+        # Extract images from iterator (MNIST returns (images, labels))
+        def data_iterator():
+            for img, _ in it:
+                yield img
+        it = data_iterator()
+    elif dataset_name == "audio":
+        # Audio pipeline returns batches directly
+        it = build_audio_pipeline(
+            data_dir=data_dir,
+            seed=config.seed,
+            frame_sz=config.noise_dimension,  # Use original noise_dimension for frame size
+            batch_size=config.batch_size,
+        )
+        # Flatten audio frames to [B, frame_sz]
+        def data_iterator():
+            for batch in it:
+                # batch is [B, frame_sz, n_channels], flatten to [B, frame_sz * n_channels]
+                # or keep as [B, frame_sz] if mono
+                if batch.ndim == 3:
+                    batch = batch.reshape(batch.shape[0], -1)
+                yield batch
+        it = data_iterator()
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
 
     # Setup logging
     log_path = logs_dir / "train_log.jsonl"
@@ -276,9 +330,15 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
     for step in range(start_step, config.n_steps):
         profiler.before_step(step)
         
-        img, tar = next(it)
-
-        x = jnp.asarray(img)  # Already preprocessed by load_mnist
+        batch_data = next(it)
+        x = jnp.asarray(batch_data)  # Convert to JAX array
+        
+        # Apply tokenization if configured
+        if tokenization is not None:
+            # Tokenize: [B, original_dim] -> [B, n_tokens, token_dim]
+            x_tokens = tokenization.tokenize(x)
+            # Flatten: [B, n_tokens, token_dim] -> [B, n_tokens * token_dim]
+            x = x_tokens.reshape(x_tokens.shape[0], -1)
 
         # Use unified training step with loss strategy
         # Strategy is created once outside loop for JIT efficiency
@@ -318,8 +378,22 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
                 use_improved_mean_flow=config.use_improved_mean_flow,
                 guidance_scale=1.0,
             )
+            
+            # Handle detokenization if tokenization is used
+            if tokenization is not None and token_shape is not None:
+                # Unflatten: [B, n_tokens * token_dim] -> [B, n_tokens, token_dim]
+                smps_tokens = smps.reshape(smps.shape[0], token_shape[0], token_shape[1])
+                # Detokenize: [B, n_tokens, token_dim] -> [B, original_dim]
+                smps = tokenization.detokenize(smps_tokens)
+            
             n_show = min(16, len(smps))
-            smps_np = np.array(smps[:n_show]).reshape(n_show, 28, 28)
+            # Reshape for plotting (assume square images for MNIST)
+            if config.dataset == "mnist" or config.dataset is None:
+                img_size = int(original_noise_dim ** 0.5)
+                smps_np = np.array(smps[:n_show]).reshape(n_show, img_size, img_size)
+            else:
+                # For audio or other datasets, just use flattened
+                smps_np = np.array(smps[:n_show])
             # Use dummy labels for plotting (no class conditioning)
             cls_np = np.zeros(n_show, dtype=np.int32)
 
@@ -362,9 +436,22 @@ def train_flow(config: TrainFlowConfig, resume: bool = False) -> None:
         use_improved_mean_flow=config.use_improved_mean_flow,
         guidance_scale=1.0,
     )
-
+    
+    # Handle detokenization if tokenization is used
+    if tokenization is not None and token_shape is not None:
+        # Unflatten: [B, n_tokens * token_dim] -> [B, n_tokens, token_dim]
+        smps_tokens = smps.reshape(smps.shape[0], token_shape[0], token_shape[1])
+        # Detokenize: [B, n_tokens, token_dim] -> [B, original_dim]
+        smps = tokenization.detokenize(smps_tokens)
+    
     n_show = min(16, len(smps))
-    smps_np = np.array(smps[:n_show]).reshape(n_show, 28, 28)
+    # Reshape for plotting (assume square images for MNIST)
+    if config.dataset == "mnist" or config.dataset is None:
+        img_size = int(original_noise_dim ** 0.5)
+        smps_np = np.array(smps[:n_show]).reshape(n_show, img_size, img_size)
+    else:
+        # For audio or other datasets, just use flattened
+        smps_np = np.array(smps[:n_show])
     # Use dummy labels for plotting (no class conditioning)
     cls_np = np.zeros(n_show, dtype=np.int32)
 

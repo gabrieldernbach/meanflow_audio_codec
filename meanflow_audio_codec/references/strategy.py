@@ -2,40 +2,119 @@
 
 Implements three flow-based generative methods using the strategy pattern.
 
-## Comparison
+## Method Comparison
 
-| Aspect | Flow Matching | Mean Flow | Improved Mean Flow |
-|--------|--------------|-----------|-------------------|
-| Time Inputs | `t` only | `t, r` (r ≤ t) | `t, r` (r ≤ t) |
-| Loss Type | Direct regression | Adaptive weighted | Standard regression |
-| Target | `e - x` | Network-dependent | Network-independent |
-| JVP Direction | N/A | `(e-x, 1, 0)` | `(v_θ, 0, 1)` |
-| Sampling Steps | ~100 | 2-5 | 2-5 |
-| Speedup vs FM | 1× | 20-50× | 20-50× |
+"""
+| Aspect                  | Flow Matching     | Mean Flow        | Improved Mean Flow  |
+|-------------------------|------------------|------------------|---------------------|
+| Time Inputs             | t only           | t, r (r ≤ t)     | t, r (r ≤ t)        |
+| Loss Type               | Direct regression| Adaptive weighted| Standard regression |
+| Target Formulation      | e - x            | Network-dependent| Network-independent |
+| JVP Direction           | N/A              | (e-x, 1, 0)      | (v_θ, 0, 1)         |
+| Boundary Condition      | N/A              | Implicit         | Explicit v_θ = u_θ(t,t) |
+| Reweighting             | No               | Yes (gamma, c)   | No                  |
+| Sampling Steps          | ~100             | 2-5              | 2-5                 |
+| Speedup vs FM           | 1×               | 20-50×           | 20-50×              |
+| Training Stability      | High             | Medium           | High                |
+| Implementation Complexity| Low              | Medium           | Medium              |
+"""
 
-## Key Differences
+## Flow Matching
 
-**Flow Matching**: Single-time `(x, t, cls_idx)`, MSE on `v_θ(z_t, t) ≈ (e - x)`.
+**Key Characteristics**:
+- Single-time `(x, t, cls_idx)` forward pass
+- Direct regression: `v_θ(z_t, t) ≈ (e - x)` where `z_t = (1-t)x + t·e`
+- Loss: Standard MSE on velocity prediction
+- Noise schedule: Linear interpolation with `noise_min` and `noise_max`
 
-**Mean Flow**: Dual-time with average velocity `u(z_t, r, t)`, adaptive reweighting
-`w = 1/(error² + c)^(1-γ)`. Hyperparameters: `gamma=0.5`, `c=1e-3`, `flow_ratio=0.5`.
+**Advantages**: Simple, stable training, well-established baseline
 
-**Improved Mean Flow**: Dual-time with boundary condition `v_θ = u_θ(t,t)`, network-independent
-target via JVP along `(v_θ, 0, 1)`. Hyperparameters: `flow_ratio=0.5` only.
+**Disadvantages**: Slow generation (~100 steps), not suitable for real-time
 
-## References
+**Reference**: Lipman et al., "Flow Matching for Generative Modeling", 2023
+https://arxiv.org/pdf/2210.02747
 
-1. Flow Matching: https://arxiv.org/pdf/2210.02747
-2. Mean Flow: https://arxiv.org/abs/2505.13447
-3. Improved Mean Flow: https://arxiv.org/abs/2512.02012
+## Mean Flow
+
+**Key Characteristics**:
+- Dual-time `(x, t, r, cls_idx)` with `r ≤ t`
+- Models average velocity `u(z_t, r, t)` between timesteps `r` and `t`
+- Adaptive reweighting: `w = 1/(error² + c)^(1-γ)` based on prediction error
+- Hyperparameters: `gamma=0.5`, `c=1e-3`, `flow_ratio=0.5`
+
+**Loss Function**:
+- Sample `t, r` with `r ≤ t`, set `r=t` for `flow_ratio` fraction
+- Compute `u_target = (e - x) - (t-r) * JVP(model, (z, t, r), (e-x, 1, 0))`
+- Weighted loss: `loss = mean(w * error²)` where `error = u - detach(u_target)`
+
+**Advantages**: Fast generation (2-5 steps), adaptive reweighting helps difficult samples
+
+**Disadvantages**: Network-dependent target, more complex training objective
+
+**Reference**: Geng et al., "Mean Flows for One-step Generative Modeling", 2025
+https://arxiv.org/abs/2505.13447
+
+## Improved Mean Flow
+
+**Key Characteristics**:
+- Dual-time `(x, t, r, cls_idx)` with `r ≤ t`
+- Boundary condition: `v_θ(z_t, t) = u_θ(z_t, t, t)` (explicit velocity prediction)
+- JVP uses `v_θ` instead of `(e - x)` in JVP computation
+- Compound prediction: `V_θ = u_θ + (t-r) · detach(JVP)`
+- Standard L2 regression (no adaptive weighting)
+- Hyperparameters: `flow_ratio=0.5` only (simpler than Mean Flow)
+
+**Loss Function**:
+- Sample `t, r` with `r ≤ t`, set `r=t` for `flow_ratio` fraction
+- Compute boundary: `v_theta = model(z, t, t, cls_idx)`
+- JVP along `(v_theta, 0, 1)`: `u, dudt = JVP(model, (z, t, r), (v_theta, 0, 1))`
+- Compound: `V_theta = u + (t-r) * detach(dudt)`
+- Loss: `MSE(V_theta, e - x)`
+
+**Advantages**: Network-independent target, simpler objective, more stable training,
+same fast generation as Mean Flow (2-5 steps)
+
+**Disadvantages**: Slightly more complex forward pass (boundary condition computation)
+
+**Reference**: Geng et al., "Improved Mean Flows: On the Challenges of Fastforward Generative Models", 2024
+https://arxiv.org/abs/2512.02012
+
+## Method Progression
+
+```
+Flow Matching (baseline)
+    ↓
+Mean Flow (introduces average velocity, adaptive weighting)
+    ↓
+Improved Mean Flow (eliminates network-dependent target, stabilizes training)
+```
+
+**Recommendation**: Use Improved Mean Flow for best balance of speed, stability, and quality.
 """
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from meanflow_audio_codec.references.config import ModelConfig, TrainConfig, FlowStrategyConfig
+from meanflow_audio_codec.references.model import ModelConfig
+
+if TYPE_CHECKING:
+    from meanflow_audio_codec.references.train import TrainConfig
+
+
+@dataclass
+class FlowStrategyConfig:
+    """Flow strategy specific configuration."""
+    # Flow matching specific
+    noise_min: float = 0.001
+    noise_max: float = 0.999
+    
+    # Mean Flow / Improved Mean Flow specific
+    flow_ratio: float = 0.5
+    gamma: float = 0.5
+    c: float = 1e-3
 
 
 @dataclass
@@ -55,15 +134,22 @@ class FlowStrategy:
         """Create method-specific configs with defaults. Returns (model_config, train_config, flow_strategy_config)."""
         raise NotImplementedError
     
-    def create_scheduler(self, opt, train_cfg: TrainConfig) -> torch.optim.lr_scheduler.LRScheduler:
-        """Create learning rate scheduler with warmup for all flow methods."""
-        schedule = torch.cat([
-            torch.linspace(0, 1, train_cfg.warmup),
-            torch.logspace(0, -1, train_cfg.steps-train_cfg.warmup+1),
-        ])
+    def create_scheduler(self, opt, train_cfg: "TrainConfig") -> torch.optim.lr_scheduler.LRScheduler:
+        """Create learning rate scheduler with warmup for all flow methods.
+        
+        Linear warmup from 0 to 1 over warmup steps, then stays at 1.0.
+        No memory allocation - computes schedule on the fly.
+        """
+        warmup_steps = train_cfg.warmup
+        
+        def lr_lambda(step: int) -> float:
+            if step < warmup_steps:
+                return (step + 1) / warmup_steps
+            return 1.0
+        
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer=opt,
-            lr_lambda=schedule.__getitem__
+            lr_lambda=lr_lambda
         )
     
     def needs_ref_time(self) -> bool:

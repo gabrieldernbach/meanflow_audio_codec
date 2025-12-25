@@ -25,7 +25,6 @@ from flax.training import train_state as flax_train_state
 from meanflow_audio_codec.configs.config import TrainFlowConfig
 from meanflow_audio_codec.evaluators.performance import count_parameters
 from meanflow_audio_codec.models import ConditionalFlow, TrainState
-from jax.tree_util import tree_map
 
 
 def save_json(path: Path, payload: dict) -> None:
@@ -96,12 +95,16 @@ def get_param_shapes(params: Any) -> dict[str, list[int]]:
     """
     shapes: dict[str, list[int]] = {}
     
-    def extract_shape(path: tuple, node: Any) -> None:
-        if isinstance(node, (jnp.ndarray, np.ndarray)):
+    def extract_shapes_recursive(path: tuple, node: Any) -> None:
+        """Recursively extract shapes from parameter tree."""
+        if isinstance(node, dict):
+            for key, value in node.items():
+                extract_shapes_recursive(path + (key,), value)
+        elif isinstance(node, (jnp.ndarray, np.ndarray)):
             param_path = "/".join(str(p) for p in path)
             shapes[param_path] = list(node.shape)
     
-    tree_map(extract_shape, params)
+    extract_shapes_recursive((), params)
     return shapes
 
 
